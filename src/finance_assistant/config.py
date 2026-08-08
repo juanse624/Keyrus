@@ -14,6 +14,9 @@ DATA_DIR: Path = Path(__file__).resolve().parents[2] / "data"
 # <repo_root>/config, independent of the caller's cwd.
 CONFIG_DIR: Path = Path(__file__).resolve().parents[2] / "config"
 
+# <repo_root>/traces, independent of the caller's cwd.
+TRACES_DIR: Path = Path(__file__).resolve().parents[2] / "traces"
+
 # accrual_date is the financial date basis by default (never posting_date).
 DEFAULT_FINANCIAL_DATE_FIELD = "accrual_date"
 
