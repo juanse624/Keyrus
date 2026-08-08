@@ -32,17 +32,18 @@ from finance_assistant.tools.documents import search_documents
 from finance_assistant.tools.fx import aggregate_usd, convert_to_usd
 from finance_assistant.tools.ledger import query_ledger
 from finance_assistant.tools.te_policy import load_policy_rules
+from finance_assistant.workflows._shared import ToolTrace
 
 
 def _year_bounds(year: int) -> tuple[pd.Timestamp, pd.Timestamp]:
     return pd.Timestamp(year=year, month=1, day=1), pd.Timestamp(year=year, month=12, day=31)
 
 
-def _te_total(rows: pd.DataFrame, coa: pd.DataFrame, fx: pd.DataFrame, date_field: str, parent_name: str):
-    hierarchy = resolve_account_hierarchy(rows, coa, date_field=date_field, strict=False)
+def _te_total(rows: pd.DataFrame, coa: pd.DataFrame, fx: pd.DataFrame, date_field: str, parent_name: str, tt: ToolTrace):
+    hierarchy = tt.call(resolve_account_hierarchy, rows, coa, date_field=date_field, strict=False)
     te_rows = hierarchy.rows.loc[hierarchy.rows["parent_name"] == parent_name]
-    fx_result = convert_to_usd(te_rows, fx, date_field=date_field)
-    total = aggregate_usd(fx_result)
+    fx_result = tt.call(convert_to_usd, te_rows, fx, date_field=date_field)
+    total = tt.call(aggregate_usd, fx_result)
     account_codes = sorted(te_rows["account_code"].dropna().unique().tolist())
     return te_rows, fx_result, total, account_codes
 
@@ -55,13 +56,14 @@ def travel_comparison(
     year_prior: int,
     date_field: str = DEFAULT_FINANCIAL_DATE_FIELD,
 ) -> EvidenceBundle:
-    parent_name = load_policy_rules().te_perimeter.parent_name
+    tt = ToolTrace()
+    parent_name = tt.call(load_policy_rules).te_perimeter.parent_name
 
     years = {"current": year_current, "prior": year_prior}
     ledgers: dict[str, pd.DataFrame] = {}
     for key, y in years.items():
         start, end = _year_bounds(y)
-        ledgers[key] = query_ledger(gl, start, end, date_field=date_field).rows
+        ledgers[key] = tt.call(query_ledger, gl, start, end, date_field=date_field).rows
 
     combined = pd.concat(ledgers.values())
     reference_date_current = combined[date_field].max()
@@ -72,7 +74,7 @@ def travel_comparison(
     coverages: list[Coverage] = []
     for key, y in years.items():
         rows = ledgers[key]
-        te_rows, fx_result, total, codes = _te_total(rows, coa, fx, date_field, parent_name)
+        te_rows, fx_result, total, codes = _te_total(rows, coa, fx, date_field, parent_name, tt)
         reported[key] = {"rows": te_rows, "fx_result": fx_result, "total": total, "account_codes": codes}
         coverages.append(Coverage.from_fx_coverage(fx_result.coverage))
 
@@ -87,7 +89,7 @@ def travel_comparison(
             rows = ledgers[key].copy()
             ref_col = f"_comparable_ref_date_{basis_name}"
             rows[ref_col] = ref_date
-            te_rows, fx_result, total, codes = _te_total(rows, coa, fx, ref_col, parent_name)
+            te_rows, fx_result, total, codes = _te_total(rows, coa, fx, ref_col, parent_name, tt)
             comparable_bases[basis_name][key] = {
                 "rows": te_rows,
                 "fx_result": fx_result,
@@ -105,10 +107,10 @@ def travel_comparison(
             comparable_idx = set(te_rows.index)
             rows_added_idx = comparable_idx - reported_idx
             rows_removed_idx = reported_idx - comparable_idx
-            added_usd = convert_to_usd(ledgers[key].loc[list(rows_added_idx)], fx, date_field=date_field)
-            removed_usd = convert_to_usd(ledgers[key].loc[list(rows_removed_idx)], fx, date_field=date_field)
-            added_total = aggregate_usd(added_usd).converted_amount_usd
-            removed_total = aggregate_usd(removed_usd).converted_amount_usd
+            added_usd = tt.call(convert_to_usd, ledgers[key].loc[list(rows_added_idx)], fx, date_field=date_field)
+            removed_usd = tt.call(convert_to_usd, ledgers[key].loc[list(rows_removed_idx)], fx, date_field=date_field)
+            added_total = tt.call(aggregate_usd, added_usd).converted_amount_usd
+            removed_total = tt.call(aggregate_usd, removed_usd).converted_amount_usd
             bridge = added_total - removed_total
             bridge_usd[basis_name][key] = bridge
             calculations.append(
@@ -171,7 +173,8 @@ def travel_comparison(
 
     sources: list[SourceRef] = []
     if reclassified_account_name:
-        search_result = search_documents(
+        search_result = tt.call(
+            search_documents,
             query=f"{reclassified_account_name} reclassification",
             filenames=["board_memo_2024_q2.md"],
             max_results=1,
@@ -236,4 +239,5 @@ def travel_comparison(
         calculations=calculations,
         refusal_reason=None,
         clarification_options=gate_result.clarification_options,
+        tool_calls=tt.calls,
     )

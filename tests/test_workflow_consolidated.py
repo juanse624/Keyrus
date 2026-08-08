@@ -131,6 +131,25 @@ def test_explicit_year_with_no_rows_refuses_via_no_data(write_csv):
     assert "no ledger rows" in bundle.refusal_reason
 
 
+def test_tool_calls_are_recorded(write_csv):
+    gl, fx = _load(
+        write_csv,
+        [
+            _gl_row(txn_id="T1", entity="E1", amount="1000.00"),
+            _gl_row(txn_id="T2", entity="E2", amount="500.00"),
+        ],
+        [_fx_row()],
+    )
+
+    bundle = consolidated_spend(gl, fx, "Q3", year=2024)
+
+    assert bundle.tool_calls
+    tool_names = {tc.tool for tc in bundle.tool_calls}
+    assert tool_names <= {"query_ledger", "convert_to_usd", "aggregate_usd", "aggregate_usd_by"}
+    assert "query_ledger" in tool_names
+    assert all(tc.duration_ms >= 0 for tc in bundle.tool_calls)
+
+
 # ---------------------------------------------------------------------------
 # Structural smoke test against real data/ — no concrete values/counts.
 # ---------------------------------------------------------------------------

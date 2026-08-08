@@ -23,6 +23,7 @@ from finance_assistant.evidence.models import (
 from finance_assistant.tools.duplicates import DuplicateDetectionRules, detect_duplicate_candidates
 from finance_assistant.tools.ledger import query_ledger
 from finance_assistant.tools.vendors import detect_alias_clusters
+from finance_assistant.workflows._shared import ToolTrace
 
 
 def duplicate_payment_check(
@@ -33,16 +34,17 @@ def duplicate_payment_check(
     date_field: str = DEFAULT_FINANCIAL_DATE_FIELD,
     rules: DuplicateDetectionRules | None = None,
 ) -> EvidenceBundle:
+    tt = ToolTrace()
     assumptions: list[str] = []
     if date_start is not None and date_end is not None:
-        rows = query_ledger(gl, date_start, date_end, date_field=date_field).rows
+        rows = tt.call(query_ledger, gl, date_start, date_end, date_field=date_field).rows
         assumptions.append(f"scoped to {date_start}..{date_end} on {date_field}")
     else:
         rows = gl
         assumptions.append("no period specified: matched across the full supplied ledger")
 
-    alias_clusters = detect_alias_clusters(vendors)
-    detection = detect_duplicate_candidates(rows, rules=rules, alias_clusters=alias_clusters)
+    alias_clusters = tt.call(detect_alias_clusters, vendors)
+    detection = tt.call(detect_duplicate_candidates, rows, rules=rules, alias_clusters=alias_clusters)
 
     candidates_by_confidence: dict[str, list[dict]] = {"HIGH": [], "MEDIUM": [], "LOW": []}
     reversed_count = 0
@@ -106,4 +108,5 @@ def duplicate_payment_check(
         coverage=coverage,
         refusal_reason=None,
         clarification_options=gate_result.clarification_options,
+        tool_calls=tt.calls,
     )

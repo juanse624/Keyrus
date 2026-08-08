@@ -121,6 +121,7 @@ class ToolCall(BaseModel):
     tool: str
     arguments_summary: dict[str, object]
     result_summary: dict[str, object]
+    duration_ms: int = 0
 
 
 class EvidenceBundle(BaseModel):

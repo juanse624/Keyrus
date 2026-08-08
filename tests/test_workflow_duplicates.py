@@ -103,6 +103,26 @@ def test_missing_evidence_always_present_even_with_zero_candidates(write_csv):
     assert len(bundle.missing_evidence) == 2
 
 
+def test_tool_calls_are_recorded(write_csv):
+    gl, vendors = _load(
+        write_csv,
+        [
+            _gl_row(txn_id="T1", doc_ref="D1"),
+            _gl_row(txn_id="T2", doc_ref="D2"),
+        ],
+        [_vendor_row()],
+    )
+
+    bundle = duplicate_payment_check(gl, vendors, date_start="2024-04-01", date_end="2024-04-30")
+
+    assert bundle.tool_calls
+    tool_names = {tc.tool for tc in bundle.tool_calls}
+    assert tool_names <= {"query_ledger", "detect_alias_clusters", "detect_duplicate_candidates"}
+    assert "query_ledger" in tool_names
+    assert "detect_duplicate_candidates" in tool_names
+    assert all(tc.duration_ms >= 0 for tc in bundle.tool_calls)
+
+
 # ---------------------------------------------------------------------------
 # Structural smoke test against real data/ — no concrete values/counts.
 # ---------------------------------------------------------------------------

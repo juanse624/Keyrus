@@ -119,6 +119,24 @@ def test_sources_include_a_source_ref_per_cited_section(write_csv):
     assert all(s.evidence_id for s in bundle.sources)
 
 
+def test_tool_calls_are_recorded(write_csv):
+    gl, coa, fx = _load(
+        write_csv,
+        [_gl_row(txn_id="T1", amount="1500.00", approval_ref="")],
+        [_coa_row()],
+        [_fx_row()],
+    )
+
+    bundle = te_policy_check(gl, coa, fx, "2024-01-01", "2024-12-31")
+
+    assert bundle.tool_calls
+    tool_names = {tc.tool for tc in bundle.tool_calls}
+    assert tool_names <= {"query_ledger", "load_policy_rules", "evaluate_te_policy", "search_documents"}
+    assert "query_ledger" in tool_names
+    assert "evaluate_te_policy" in tool_names
+    assert all(tc.duration_ms >= 0 for tc in bundle.tool_calls)
+
+
 # ---------------------------------------------------------------------------
 # Structural smoke test against real data/ — no concrete values/counts.
 # ---------------------------------------------------------------------------

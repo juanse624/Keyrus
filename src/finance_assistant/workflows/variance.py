@@ -33,7 +33,7 @@ from finance_assistant.tools.cost_centres import normalize_reporting_cost_centre
 from finance_assistant.tools.documents import search_documents, tokenize
 from finance_assistant.tools.fx import aggregate_usd_by, convert_to_usd
 from finance_assistant.tools.ledger import query_ledger
-from finance_assistant.workflows._shared import quarter_bounds
+from finance_assistant.workflows._shared import ToolTrace, quarter_bounds
 
 
 def budget_variance(
@@ -46,6 +46,7 @@ def budget_variance(
     documents_dir: str | Path | None = None,
     date_field: str = DEFAULT_FINANCIAL_DATE_FIELD,
 ) -> EvidenceBundle:
+    tt = ToolTrace()
     start, end = quarter_bounds(year, quarter)
     period_start, period_end = start.strftime("%Y-%m"), end.strftime("%Y-%m")
 
@@ -67,17 +68,19 @@ def budget_variance(
             warnings=gate_result.warnings_added,
             refusal_reason=f"budget.csv does not cover {quarter} {year} (R5: budget covers one year only)",
             clarification_options=gate_result.clarification_options,
+            tool_calls=tt.calls,
         )
 
     # 1. Numeric driver established from the ledger FIRST, before any document search.
-    ledger = query_ledger(gl, start, end, date_field=date_field)
-    hierarchy = resolve_account_hierarchy(ledger.rows, coa, date_field=date_field, strict=False)
-    normalized = normalize_reporting_cost_centre(hierarchy.rows, date_field=date_field)
-    fx_result = convert_to_usd(normalized.rows, fx, date_field=date_field)
-    actual_by_cc = aggregate_usd_by(fx_result, by=["reporting_cost_centre"])
+    ledger = tt.call(query_ledger, gl, start, end, date_field=date_field)
+    hierarchy = tt.call(resolve_account_hierarchy, ledger.rows, coa, date_field=date_field, strict=False)
+    normalized = tt.call(normalize_reporting_cost_centre, hierarchy.rows, date_field=date_field)
+    fx_result = tt.call(convert_to_usd, normalized.rows, fx, date_field=date_field)
+    actual_by_cc = tt.call(aggregate_usd_by, fx_result, by=["reporting_cost_centre"])
     actual_usd_by_cost_centre = {key[0]: v.converted_amount_usd for key, v in actual_by_cc.items()}
 
-    budget_result = query_budget(
+    budget_result = tt.call(
+        query_budget,
         budget,
         period_start=period_start,
         period_end=period_end,
@@ -108,10 +111,10 @@ def budget_variance(
     else:
         worst_cc = adverse_ranking[0][0]
         worst_rows = normalized.rows.loc[normalized.rows["reporting_cost_centre"] == worst_cc]
-        worst_fx = convert_to_usd(worst_rows, fx, date_field=date_field)
-        by_account = aggregate_usd_by(worst_fx, by=["account_code", "account_name"])
+        worst_fx = tt.call(convert_to_usd, worst_rows, fx, date_field=date_field)
+        by_account = tt.call(aggregate_usd_by, worst_fx, by=["account_code", "account_name"])
 
-        worst_budget = query_budget(budget, period_start=period_start, period_end=period_end, cost_centres=[worst_cc])
+        worst_budget = tt.call(query_budget, budget, period_start=period_start, period_end=period_end, cost_centres=[worst_cc])
         budget_by_account = worst_budget.aggregated_rows.groupby("account_code")["budget_amount"].sum().to_dict()
 
         account_decomposition = {
@@ -143,7 +146,8 @@ def budget_variance(
     if driver_account and driver_account.get("account_name"):
         driver_name = str(driver_account["account_name"])
         driver_terms = set(tokenize(driver_name))
-        search_result = search_documents(
+        search_result = tt.call(
+            search_documents,
             query=driver_name, filenames=["board_memo_2024_q2.md"], documents_dir=documents_dir, max_results=1
         )
 
@@ -249,4 +253,5 @@ def budget_variance(
         coverage=fx_coverage,
         refusal_reason=None,
         clarification_options=gate_result.clarification_options,
+        tool_calls=tt.calls,
     )

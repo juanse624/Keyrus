@@ -205,6 +205,33 @@ def test_missing_fx_rate_reflected_in_coverage(write_csv):
     assert bundle.coverage.computable_amount_pct < 100.0
 
 
+def test_tool_calls_are_recorded(write_csv):
+    gl, coa, fx = _load(
+        write_csv,
+        [
+            _gl_row(txn_id="T1", posting_date="2024-03-05", accrual_date="2024-03-05", amount="1000.00"),
+            _gl_row(txn_id="T2", posting_date="2023-03-05", accrual_date="2023-03-05", amount="900.00"),
+        ],
+        [_coa_row(valid_from="2023-01-01", valid_to="9999-12-31")],
+        [_fx_row(period_month="2024-03"), _fx_row(period_month="2023-03")],
+    )
+
+    bundle = travel_comparison(gl, coa, fx, year_current=2024, year_prior=2023)
+
+    assert bundle.tool_calls
+    tool_names = {tc.tool for tc in bundle.tool_calls}
+    assert tool_names <= {
+        "load_policy_rules",
+        "query_ledger",
+        "resolve_account_hierarchy",
+        "convert_to_usd",
+        "aggregate_usd",
+        "search_documents",
+    }
+    assert "query_ledger" in tool_names
+    assert all(tc.duration_ms >= 0 for tc in bundle.tool_calls)
+
+
 # ---------------------------------------------------------------------------
 # Structural smoke test against real data/ — no concrete values/counts.
 # ---------------------------------------------------------------------------

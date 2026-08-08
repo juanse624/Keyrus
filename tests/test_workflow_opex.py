@@ -164,6 +164,30 @@ def test_perimeter_filter_excludes_nothing_when_all_accounts_share_statement_lin
     assert any("did not exclude any row" in a for a in bundle.assumptions)
 
 
+def test_tool_calls_are_recorded(write_csv):
+    gl, coa, fx = _load(
+        write_csv,
+        [_gl_row(txn_id="T1", cost_centre="CC-A", amount="1000.00")],
+        [_coa_row()],
+        [_fx_row()],
+    )
+
+    bundle = opex_by_cost_centre(gl, coa, fx, "Q2", year=2024)
+
+    assert bundle.tool_calls
+    tool_names = {tc.tool for tc in bundle.tool_calls}
+    assert tool_names <= {
+        "query_ledger",
+        "resolve_account_hierarchy",
+        "normalize_reporting_cost_centre",
+        "convert_to_usd",
+        "aggregate_usd",
+        "aggregate_usd_by",
+    }
+    assert "query_ledger" in tool_names
+    assert all(tc.duration_ms >= 0 for tc in bundle.tool_calls)
+
+
 # ---------------------------------------------------------------------------
 # Structural smoke test against real data/ — no concrete values/counts.
 # ---------------------------------------------------------------------------

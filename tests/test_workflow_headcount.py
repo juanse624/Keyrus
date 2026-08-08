@@ -51,6 +51,18 @@ def test_result_is_none_and_bundle_construction_does_not_raise(write_markdown):
     assert bundle.refusal_reason is not None
 
 
+def test_tool_calls_are_recorded(write_markdown):
+    documents_dir = write_markdown("board_memo_2024_q2.md", "## Headcount\n\nHeadcount is tracked by HR, not finance.\n")
+
+    bundle = headcount_cost_per_fte(documents_dir=documents_dir)
+
+    assert bundle.tool_calls
+    tool_names = {tc.tool for tc in bundle.tool_calls}
+    assert tool_names <= {"search_documents"}
+    assert "search_documents" in tool_names
+    assert all(tc.duration_ms >= 0 for tc in bundle.tool_calls)
+
+
 # ---------------------------------------------------------------------------
 # Structural smoke test against real data/documents/ — no concrete values.
 # ---------------------------------------------------------------------------

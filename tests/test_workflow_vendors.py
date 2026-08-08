@@ -133,6 +133,36 @@ def test_rows_without_vendor_id_excluded_from_rankings(write_csv):
     assert len(bundle.result["ranking_by_vendor_id"]) == 1
 
 
+def test_tool_calls_are_recorded(write_csv):
+    gl, vendors, fx = _load(
+        write_csv,
+        [
+            _gl_row(txn_id="T1", vendor_id="V1", amount="1000.00"),
+            _gl_row(txn_id="T2", vendor_id="V2", amount="500.00"),
+        ],
+        [
+            _vendor_row(vendor_id="V1", vendor_name="Acme Inc"),
+            _vendor_row(vendor_id="V2", vendor_name="Zenith Corp"),
+        ],
+        [_fx_row()],
+    )
+
+    bundle = top_vendors(gl, vendors, fx, "2024-04-01", "2024-04-30", top_n=2)
+
+    assert bundle.tool_calls
+    tool_names = {tc.tool for tc in bundle.tool_calls}
+    assert tool_names <= {
+        "query_ledger",
+        "vendor_lookup",
+        "convert_to_usd",
+        "aggregate_usd_by",
+        "detect_alias_clusters",
+        "aggregate_usd",
+    }
+    assert "query_ledger" in tool_names
+    assert all(tc.duration_ms >= 0 for tc in bundle.tool_calls)
+
+
 # ---------------------------------------------------------------------------
 # Structural smoke test against real data/ — no concrete values/counts.
 # ---------------------------------------------------------------------------

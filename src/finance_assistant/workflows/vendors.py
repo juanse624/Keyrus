@@ -16,6 +16,7 @@ from finance_assistant.evidence.models import AnswerStatus, Coverage, EvidenceBu
 from finance_assistant.tools.fx import aggregate_usd, aggregate_usd_by, convert_to_usd
 from finance_assistant.tools.ledger import query_ledger
 from finance_assistant.tools.vendors import detect_alias_clusters, normalize_vendor_name, vendor_lookup
+from finance_assistant.workflows._shared import ToolTrace
 
 
 def top_vendors(
@@ -27,16 +28,18 @@ def top_vendors(
     top_n: int = 10,
     date_field: str = DEFAULT_FINANCIAL_DATE_FIELD,
 ) -> EvidenceBundle:
-    ledger = query_ledger(gl, date_start, date_end, date_field=date_field)
-    lookup = vendor_lookup(ledger.rows, vendors)
-    fx_result = convert_to_usd(lookup.rows, fx, date_field=date_field)
+    tt = ToolTrace()
+
+    ledger = tt.call(query_ledger, gl, date_start, date_end, date_field=date_field)
+    lookup = tt.call(vendor_lookup, ledger.rows, vendors)
+    fx_result = tt.call(convert_to_usd, lookup.rows, fx, date_field=date_field)
 
     has_vendor_id = fx_result.rows["vendor_id"].notna()
     vendor_id_rows = fx_result.rows.loc[has_vendor_id]
     vendor_id_fx = fx_result.__class__(rows=vendor_id_rows, coverage=fx_result.coverage, missing=fx_result.missing)
-    ranking_by_vendor_id = aggregate_usd_by(vendor_id_fx, by=["vendor_id"])
+    ranking_by_vendor_id = tt.call(aggregate_usd_by, vendor_id_fx, by=["vendor_id"])
 
-    alias_clusters = detect_alias_clusters(vendors)
+    alias_clusters = tt.call(detect_alias_clusters, vendors)
     normalized_by_vendor_id = dict(zip(vendors["vendor_id"], vendors["vendor_name"].map(normalize_vendor_name)))
     cluster_by_vendor_id: dict[str, str] = {}
     for cluster in alias_clusters.clusters:
@@ -48,7 +51,7 @@ def top_vendors(
         lambda v: cluster_by_vendor_id.get(v, normalized_by_vendor_id.get(v, v))
     )
     cluster_fx = fx_result.__class__(rows=working, coverage=fx_result.coverage, missing=fx_result.missing)
-    ranking_by_cluster = aggregate_usd_by(cluster_fx, by=["_cluster_key"])
+    ranking_by_cluster = tt.call(aggregate_usd_by, cluster_fx, by=["_cluster_key"])
 
     def top(ranking: dict) -> list[tuple]:
         return sorted(ranking.items(), key=lambda kv: kv[1].converted_amount_usd, reverse=True)[:top_n]
@@ -87,7 +90,7 @@ def top_vendors(
 
     no_vendor_id_rows = fx_result.rows.loc[~has_vendor_id]
     no_vendor_id_fx = fx_result.__class__(rows=no_vendor_id_rows, coverage=fx_result.coverage, missing=fx_result.missing)
-    vendor_less = aggregate_usd(no_vendor_id_fx) if len(no_vendor_id_rows) else None
+    vendor_less = tt.call(aggregate_usd, no_vendor_id_fx) if len(no_vendor_id_rows) else None
 
     coverage = Coverage.from_fx_coverage(fx_result.coverage)
 
@@ -122,4 +125,5 @@ def top_vendors(
         coverage=coverage,
         refusal_reason=None,
         clarification_options=gate_result.clarification_options,
+        tool_calls=tt.calls,
     )

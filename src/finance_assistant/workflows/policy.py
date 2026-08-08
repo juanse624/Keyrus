@@ -17,6 +17,7 @@ from finance_assistant.evidence.models import AnswerStatus, Coverage, EvidenceBu
 from finance_assistant.tools.documents import search_documents
 from finance_assistant.tools.ledger import query_ledger
 from finance_assistant.tools.te_policy import evaluate_te_policy, load_policy_rules
+from finance_assistant.workflows._shared import ToolTrace
 
 
 def te_policy_check(
@@ -29,9 +30,10 @@ def te_policy_check(
     policy_path: str | None = None,
     date_field: str = DEFAULT_FINANCIAL_DATE_FIELD,
 ) -> EvidenceBundle:
-    ledger = query_ledger(gl, date_start, date_end, date_field=date_field)
-    policy = load_policy_rules(policy_path)
-    evaluation = evaluate_te_policy(ledger.rows, coa, fx, policy, perimeter_basis=perimeter_basis, date_field=date_field)
+    tt = ToolTrace()
+    ledger = tt.call(query_ledger, gl, date_start, date_end, date_field=date_field)
+    policy = tt.call(load_policy_rules, policy_path)
+    evaluation = tt.call(evaluate_te_policy, ledger.rows, coa, fx, policy, perimeter_basis=perimeter_basis, date_field=date_field)
 
     findings_by_rule: dict[str, dict[str, int]] = {}
     findings_by_state: dict[str, int] = {}
@@ -45,7 +47,7 @@ def te_policy_check(
     cited_sections = sorted({(f.source_document, f.source_section) for f in evaluation.findings if f.state.value != "NOT_APPLICABLE"})
     sources: list[SourceRef] = []
     for document, section in cited_sections:
-        search_result = search_documents(query=section, filenames=[document], max_results=1)
+        search_result = tt.call(search_documents, query=section, filenames=[document], max_results=1)
         if search_result.matches:
             sources.append(SourceRef.from_document_match(search_result.matches[0]))
 
@@ -84,4 +86,5 @@ def te_policy_check(
         coverage=coverage,
         refusal_reason=None,
         clarification_options=gate_result.clarification_options,
+        tool_calls=tt.calls,
     )

@@ -22,6 +22,7 @@ from finance_assistant.evidence.models import (
     SourceRef,
 )
 from finance_assistant.tools.documents import search_documents
+from finance_assistant.workflows._shared import ToolTrace
 
 _FTE_PATTERN = re.compile(r"fte|headcount", re.IGNORECASE)
 _SCHEMAS = [config.GL_SCHEMA, config.COA_SCHEMA, config.BUDGET_SCHEMA, config.FX_SCHEMA, config.VENDORS_SCHEMA]
@@ -37,9 +38,11 @@ def _scan_schemas_for_fte_column() -> list[str]:
 
 
 def headcount_cost_per_fte(documents_dir: str | Path | None = None) -> EvidenceBundle:
+    tt = ToolTrace()
     fte_columns = _scan_schemas_for_fte_column()
 
-    search_result = search_documents(
+    search_result = tt.call(
+        search_documents,
         query="headcount FTE", filenames=["board_memo_2024_q2.md"], documents_dir=documents_dir, max_results=1
     )
 
@@ -85,4 +88,5 @@ def headcount_cost_per_fte(documents_dir: str | Path | None = None) -> EvidenceB
         coverage=Coverage(selected_rows=0, computable_rows=0, computable_amount_pct=0.0),
         refusal_reason=refusal_reason,
         clarification_options=gate_result.clarification_options,
+        tool_calls=tt.calls,
     )

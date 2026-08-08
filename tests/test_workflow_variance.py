@@ -205,6 +205,37 @@ def test_duplicate_budget_keys_reported_as_diagnostic(write_csv):
     assert any("duplicate budget key" in w for w in bundle.warnings)
 
 
+def test_tool_calls_are_recorded(write_csv, write_markdown):
+    gl, coa, fx, budget = _load(
+        write_csv,
+        [_gl_row(txn_id="T1", cost_centre="CC-A", account_code="AC1", amount="1000.00")],
+        [_coa_row(account_name="Outbound Freight")],
+        [_fx_row()],
+        [_budget_row(cost_centre="CC-A", account_code="AC1", budget_amount="500.00")],
+    )
+    documents_dir = write_markdown(
+        "board_memo_2024_q2.md",
+        "## Freight\n\nOutbound freight has run ahead of plan this quarter.\n",
+    )
+
+    bundle = budget_variance(gl, coa, fx, budget, "Q3", 2024, documents_dir=documents_dir)
+
+    assert bundle.tool_calls
+    tool_names = {tc.tool for tc in bundle.tool_calls}
+    assert tool_names <= {
+        "query_ledger",
+        "resolve_account_hierarchy",
+        "normalize_reporting_cost_centre",
+        "convert_to_usd",
+        "aggregate_usd_by",
+        "query_budget",
+        "search_documents",
+    }
+    assert "query_ledger" in tool_names
+    assert "query_budget" in tool_names
+    assert all(tc.duration_ms >= 0 for tc in bundle.tool_calls)
+
+
 # ---------------------------------------------------------------------------
 # Structural smoke test against real data/ — no concrete values/counts.
 # ---------------------------------------------------------------------------

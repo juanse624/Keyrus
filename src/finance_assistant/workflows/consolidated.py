@@ -25,7 +25,7 @@ from finance_assistant.evidence.models import (
 )
 from finance_assistant.tools.fx import aggregate_usd, aggregate_usd_by, convert_to_usd
 from finance_assistant.tools.ledger import query_ledger
-from finance_assistant.workflows._shared import quarter_bounds, resolve_year_or_readings
+from finance_assistant.workflows._shared import ToolTrace, quarter_bounds, resolve_year_or_readings
 
 
 def consolidated_spend(
@@ -35,15 +35,17 @@ def consolidated_spend(
     year: int | None = None,
     date_field: str = DEFAULT_FINANCIAL_DATE_FIELD,
 ) -> EvidenceBundle:
+    tt = ToolTrace()
+
     def compute(y: int):
         start, end = quarter_bounds(y, quarter)
-        ledger = query_ledger(gl, start, end, date_field=date_field)
+        ledger = tt.call(query_ledger, gl, start, end, date_field=date_field)
         if ledger.rows_matched == 0:
             return None, None, {"has_data": False}
 
-        fx_result = convert_to_usd(ledger.rows, fx, date_field=date_field)
-        total = aggregate_usd(fx_result)
-        by_entity = aggregate_usd_by(fx_result, by=["entity"])
+        fx_result = tt.call(convert_to_usd, ledger.rows, fx, date_field=date_field)
+        total = tt.call(aggregate_usd, fx_result)
+        by_entity = tt.call(aggregate_usd_by, fx_result, by=["entity"])
 
         status_hint = AnswerStatus.ANSWER if fx_result.coverage.is_complete else AnswerStatus.REFUSED
         payload = {"has_data": True, "fx_result": fx_result, "total": total, "by_entity": by_entity}
@@ -61,6 +63,7 @@ def consolidated_spend(
             warnings=gate_result.warnings_added,
             refusal_reason=f"no ledger rows found for {quarter} {chosen_year}" if gate_result.final_status == AnswerStatus.REFUSED else None,
             clarification_options=gate_result.clarification_options,
+            tool_calls=tt.calls,
         )
 
     fx_result = payload["fx_result"]
@@ -147,4 +150,5 @@ def consolidated_spend(
         calculations=calculations,
         refusal_reason=refusal_reason,
         clarification_options=gate_result.clarification_options,
+        tool_calls=tt.calls,
     )

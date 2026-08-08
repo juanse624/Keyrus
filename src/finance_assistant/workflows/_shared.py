@@ -2,14 +2,59 @@
 
 Not one of the eight workflows and not exposed to the model — pure
 plumbing so the year-ambiguity mechanism (decided once, applied by both
-opex_by_cost_centre and consolidated_spend) isn't reinvented twice.
+opex_by_cost_centre and consolidated_spend) isn't reinvented twice, and so
+tool-call recording (ToolTrace) isn't hand-built call by call in every
+workflow.
 """
 
-from typing import Callable
+import inspect
+import time
+from typing import Callable, TypeVar
 
 import pandas as pd
 
-from finance_assistant.evidence.models import AnswerStatus
+from finance_assistant.evidence.models import AnswerStatus, ToolCall
+from finance_assistant.evidence.summarize import summarize_for_trace
+
+T = TypeVar("T")
+
+
+class ToolTrace:
+    """Accumulates `ToolCall` entries for one workflow invocation.
+
+    The single place that decides what gets recorded when a `tools/*`
+    function is called: binds arguments by signature (real parameter names,
+    including defaults the caller didn't pass explicitly), times the call,
+    and summarizes both sides via `evidence.summarize.summarize_for_trace`.
+    Never rebuilt by hand at each call site — a workflow just wraps
+    `tt.call(some_tool, *args, **kwargs)` in place of `some_tool(*args,
+    **kwargs)`.
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[ToolCall] = []
+
+    def call(self, fn: Callable[..., T], *args: object, **kwargs: object) -> T:
+        bound = inspect.signature(fn).bind(*args, **kwargs)
+        bound.apply_defaults()
+        arguments_summary = {name: summarize_for_trace(value) for name, value in bound.arguments.items()}
+
+        start = time.perf_counter()
+        result = fn(*args, **kwargs)
+        duration_ms = int((time.perf_counter() - start) * 1000)
+
+        summarized_result = summarize_for_trace(result)
+        result_summary = summarized_result if isinstance(summarized_result, dict) else {"value": summarized_result}
+
+        self.calls.append(
+            ToolCall(
+                tool=fn.__name__,
+                arguments_summary=arguments_summary,
+                result_summary=result_summary,
+                duration_ms=duration_ms,
+            )
+        )
+        return result
 
 _QUARTER_MONTHS = {
     "Q1": (1, 3),
