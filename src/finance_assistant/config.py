@@ -11,6 +11,9 @@ from typing import TypedDict
 # <repo_root>/data, independent of the caller's cwd.
 DATA_DIR: Path = Path(__file__).resolve().parents[2] / "data"
 
+# <repo_root>/config, independent of the caller's cwd.
+CONFIG_DIR: Path = Path(__file__).resolve().parents[2] / "config"
+
 # accrual_date is the financial date basis by default (never posting_date).
 DEFAULT_FINANCIAL_DATE_FIELD = "accrual_date"
 
@@ -19,6 +22,7 @@ CHART_OF_ACCOUNTS_FILE = "chart_of_accounts.csv"
 BUDGET_FILE = "budget.csv"
 FX_RATES_FILE = "fx_rates.csv"
 VENDORS_FILE = "vendors.csv"
+POLICY_RULES_FILE = "policy_rules.yaml"
 
 
 class DatasetSchema(TypedDict):
