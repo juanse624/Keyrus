@@ -115,3 +115,26 @@ VENDORS_SCHEMA: DatasetSchema = {
     "numeric_columns": [],
     "string_columns": ["vendor_id", "vendor_name", "category", "country"],
 }
+
+
+class CostCentreTransition(TypedDict):
+    source_cost_centre: str
+    reporting_cost_centre: str
+    effective_date: str  # rows on/after this date already report under reporting_cost_centre
+    source_document: str
+    source_section: str
+
+
+# R4 — cost-centre reporting transitions, read from the board memo, never
+# inferred by the LLM or hardcoded inside tools/cost_centres.py. Each entry
+# documents which source document + section justifies the mapping, so a
+# normalization applied against it can cite that reference in the trace.
+COST_CENTRE_REPORTING_TRANSITIONS: list[CostCentreTransition] = [
+    {
+        "source_cost_centre": "OPS-NA",
+        "reporting_cost_centre": "OPS-AMER",
+        "effective_date": "2024-07-01",
+        "source_document": "board_memo_2024_q2.md",
+        "source_section": "2. Americas reorganisation",
+    },
+]
