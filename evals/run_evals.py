@@ -20,14 +20,32 @@ import re
 import sys
 from pathlib import Path
 
-import yaml
 
-from finance_assistant.evidence.models import AnswerStatus, Intent
-from finance_assistant.evidence.render import render_bundle_text
+def _exit_with_missing_dependency(exc: ModuleNotFoundError) -> None:
+    # A fresh clone run with the system `python` instead of the project's
+    # .venv (the #1 way this command breaks before printing anything) hits
+    # this as a raw ImportError/traceback. Replace it with the one line an
+    # unfamiliar reader actually needs: what's missing and the exact fix.
+    print(
+        f"error: '{exc.name}' is not installed in this interpreter ({sys.executable}) "
+        f'— run: .venv\\Scripts\\pip install -e ".[dev]"  then: .venv\\Scripts\\python.exe -m evals.run_evals',
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
-from evals.cases import CASES
-from evals.dataset import load_dataset
-from evals.preconditions import PreconditionResult
+
+try:
+    import yaml
+
+    from finance_assistant import config
+    from finance_assistant.evidence.models import AnswerStatus, Intent
+    from finance_assistant.evidence.render import render_bundle_text
+
+    from evals.cases import CASES
+    from evals.dataset import load_dataset
+    from evals.preconditions import PreconditionResult
+except ModuleNotFoundError as exc:
+    _exit_with_missing_dependency(exc)
 
 QUESTIONS_PATH = Path(__file__).parent / "questions.yaml"
 
@@ -198,8 +216,22 @@ def _run_case(case: dict, dataset) -> bool:
     return case_passed
 
 
+def _dataset_paths() -> list[Path]:
+    filenames = [
+        config.GL_TRANSACTIONS_FILE,
+        config.CHART_OF_ACCOUNTS_FILE,
+        config.BUDGET_FILE,
+        config.FX_RATES_FILE,
+        config.VENDORS_FILE,
+    ]
+    return [config.DATA_DIR / filename for filename in filenames]
+
+
 def _run_deterministic(questions: list[dict]) -> bool:
     dataset = load_dataset()
+    paths = ", ".join(str(p) for p in _dataset_paths())
+    print(f"[deterministic tier] {len(questions)} case(s) — datasets: {paths}")
+    print()
     results = []
     for case in questions:
         results.append(_run_case(case, dataset))

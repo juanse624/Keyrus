@@ -74,11 +74,12 @@ def opex_q2_period_ambiguous(
         readings.append((f"FY{year} {quarter}", AnswerStatus.ANSWER, total))
 
     labels = tuple(label for label, _, _ in readings)
+    readable_readings = "; ".join(f"{label} = ${amount:,.2f}" for label, _, amount in readings) or "none"
 
     if len(readings) < 2:
         return PreconditionResult(
             holds=False,
-            detail=f"only {len(readings)} year(s) with {quarter} opex data ({readings}); ambiguity requires >=2",
+            detail=f"only {len(readings)} year(s) with {quarter} opex data ({readable_readings}); ambiguity requires at least 2",
             labels=labels,
         )
 
@@ -86,9 +87,8 @@ def opex_q2_period_ambiguous(
     return PreconditionResult(
         holds=holds,
         detail=(
-            f"readings={[(label, amount) for label, _, amount in readings]}, "
-            f"tolerance={DEFAULT_PERIOD_READING_TOLERANCE} (evidence.gate.DEFAULT_PERIOD_READING_TOLERANCE), "
-            f"materially_different={holds}"
+            f"{readable_readings} (tolerance {DEFAULT_PERIOD_READING_TOLERANCE:.0%}, "
+            f"evidence.gate.DEFAULT_PERIOD_READING_TOLERANCE) -> materially different: {holds}"
         ),
         labels=labels,
     )
@@ -120,9 +120,14 @@ def missing_fx_rate_in_period(
 
     fx_result = convert_to_usd(ledger_rows, fx, date_field=date_field)
     holds = len(fx_result.missing) > 0
-    detail = (
-        f"{quarter} {chosen_year}: missing={[(m.currency, m.period_month, m.affected_rows) for m in fx_result.missing]}"
-    )
+    if holds:
+        readable_missing = "; ".join(
+            f"missing FX rate for {m.currency} in {m.period_month} ({m.affected_rows} row(s) affected)"
+            for m in fx_result.missing
+        )
+    else:
+        readable_missing = "none"
+    detail = f"{quarter} {chosen_year}: {readable_missing}"
     return PreconditionResult(holds=holds, detail=detail)
 
 
@@ -144,9 +149,10 @@ def coa_reclassification_between_years(coa: pd.DataFrame, year_prior: int, year_
             changed_codes.append(account_code)
 
     holds = len(changed_codes) > 0
+    readable_codes = ", ".join(sorted(changed_codes)) if changed_codes else "none"
     return PreconditionResult(
         holds=holds,
-        detail=f"account(s) reclassified within [{window_start.date()}, {window_end.date()}]: {sorted(changed_codes)}",
+        detail=f"account(s) reclassified within {window_start.date()}–{window_end.date()}: {readable_codes}",
     )
 
 
@@ -204,9 +210,11 @@ def alias_clusters_change_topn(
     top_by_cluster = top_vendor_ids(ranking_by_cluster, cluster_key_to_vendor_ids)
 
     holds = top_by_vendor_id != top_by_cluster
+    readable_by_vendor_id = ", ".join(sorted(top_by_vendor_id))
+    readable_by_cluster = ", ".join(sorted(top_by_cluster))
     return PreconditionResult(
         holds=holds,
-        detail=f"top-{top_n} by vendor_id={sorted(top_by_vendor_id)} vs by cluster={sorted(top_by_cluster)}",
+        detail=f"top-{top_n} by vendor_id: {readable_by_vendor_id} vs by alias cluster: {readable_by_cluster}",
     )
 
 
@@ -247,9 +255,15 @@ def fx_incomplete_or_budget_keys_ambiguous(
     ambiguous_ccs = [pc.affected_cost_centre for pc in budget_result.plausibility_checks if pc.is_ambiguous]
 
     holds = fx_incomplete or bool(ambiguous_ccs)
-    detail = (
-        f"fx_incomplete={fx_incomplete} "
-        f"(missing={[(m.currency, m.period_month) for m in fx_result.missing]}); "
-        f"ambiguous_budget_cost_centres={ambiguous_ccs}"
+    if fx_incomplete:
+        readable_missing = "; ".join(f"{m.currency} in {m.period_month}" for m in fx_result.missing)
+        fx_part = f"FX incomplete: missing rate(s) for {readable_missing}"
+    else:
+        fx_part = "FX complete"
+    budget_part = (
+        f"ambiguous budget cost centre(s): {', '.join(ambiguous_ccs)}"
+        if ambiguous_ccs
+        else "no ambiguous budget cost centres"
     )
+    detail = f"{fx_part}; {budget_part}"
     return PreconditionResult(holds=holds, detail=detail)
