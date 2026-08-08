@@ -129,6 +129,15 @@ class CostCentreTransition(TypedDict):
     source_section: str
 
 
+# Q1 (opex_by_cost_centre) perimeter: the statement_line value the chart of
+# accounts uses for operating expense accounts. A config constant, never a
+# hardcoded account_code list — same pattern as te_perimeter in
+# config/policy_rules.yaml. In the current dataset every account shares this
+# statement_line, so the perimeter filter happens not to exclude any row;
+# workflows must still report how many rows the filter actually excluded
+# (zero included) rather than assume the filter did something.
+OPEX_STATEMENT_LINE = "Operating Expenses"
+
 # R4 — cost-centre reporting transitions, read from the board memo, never
 # inferred by the LLM or hardcoded inside tools/cost_centres.py. Each entry
 # documents which source document + section justifies the mapping, so a
