@@ -14,7 +14,7 @@ from typing import Callable, TypeVar
 import pandas as pd
 
 from finance_assistant.evidence.models import AnswerStatus, ToolCall
-from finance_assistant.evidence.summarize import summarize_for_trace
+from finance_assistant.evidence.summarize import summarize_argument_for_trace, summarize_for_trace
 
 T = TypeVar("T")
 
@@ -25,10 +25,18 @@ class ToolTrace:
     The single place that decides what gets recorded when a `tools/*`
     function is called: binds arguments by signature (real parameter names,
     including defaults the caller didn't pass explicitly), times the call,
-    and summarizes both sides via `evidence.summarize.summarize_for_trace`.
-    Never rebuilt by hand at each call site — a workflow just wraps
-    `tt.call(some_tool, *args, **kwargs)` in place of `some_tool(*args,
-    **kwargs)`.
+    and summarizes both sides. Never rebuilt by hand at each call site — a
+    workflow just wraps `tt.call(some_tool, *args, **kwargs)` in place of
+    `some_tool(*args, **kwargs)`.
+
+    Arguments are summarized via `summarize_argument_for_trace`, not
+    `summarize_for_trace`: a dataclass-typed argument in this codebase is
+    always the object a previous tool call already returned (and therefore
+    already fully described in that earlier step's own result_summary), so
+    it collapses to a compact reference here instead of re-expanding a
+    structure the trace already showed once. The result itself still gets
+    full detail via `summarize_for_trace` — it's the new information this
+    step establishes.
     """
 
     def __init__(self) -> None:
@@ -37,7 +45,7 @@ class ToolTrace:
     def call(self, fn: Callable[..., T], *args: object, **kwargs: object) -> T:
         bound = inspect.signature(fn).bind(*args, **kwargs)
         bound.apply_defaults()
-        arguments_summary = {name: summarize_for_trace(value) for name, value in bound.arguments.items()}
+        arguments_summary = {name: summarize_argument_for_trace(value) for name, value in bound.arguments.items()}
 
         start = time.perf_counter()
         result = fn(*args, **kwargs)

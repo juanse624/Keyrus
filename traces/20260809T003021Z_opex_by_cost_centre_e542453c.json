@@ -1,6 +1,6 @@
 {
-  "run_id": "20260808T210600Z_opex_by_cost_centre_f248eda1",
-  "started_at": "2026-08-08T21:06:00Z",
+  "run_id": "20260809T003021Z_opex_by_cost_centre_e542453c",
+  "started_at": "2026-08-09T00:30:21Z",
   "question": "What was our opex by cost centre in Q2?",
   "status": "answer",
   "date_basis": "accrual_date",
@@ -193,37 +193,7 @@
       "type": "tool",
       "name": "aggregate_usd",
       "arguments": {
-        "result": {
-          "rows": 1393,
-          "coverage": {
-            "selected_rows": 1393,
-            "convertible_rows": 1393,
-            "per_currency": {
-              "CAD": {
-                "currency": "CAD",
-                "total_rows": 323,
-                "convertible_rows": 323,
-                "total_amount_local": 3156182.54,
-                "convertible_amount_local": 3156182.54
-              },
-              "EUR": {
-                "currency": "EUR",
-                "total_rows": 474,
-                "convertible_rows": 474,
-                "total_amount_local": 4416576.390000001,
-                "convertible_amount_local": 4416576.390000001
-              },
-              "USD": {
-                "currency": "USD",
-                "total_rows": 596,
-                "convertible_rows": 596,
-                "total_amount_local": 5268684.14,
-                "convertible_amount_local": 5268684.14
-              }
-            }
-          },
-          "missing": []
-        }
+        "result": "<FxConversionResult: 1393 rows, selected_rows=1393, convertible_rows=1393, per_currency=3, missing=0>"
       },
       "result_summary": {
         "converted_amount_usd": 12780721.798092201,
@@ -262,43 +232,13 @@
       "type": "tool",
       "name": "aggregate_usd_by",
       "arguments": {
-        "result": {
-          "rows": 1393,
-          "coverage": {
-            "selected_rows": 1393,
-            "convertible_rows": 1393,
-            "per_currency": {
-              "CAD": {
-                "currency": "CAD",
-                "total_rows": 323,
-                "convertible_rows": 323,
-                "total_amount_local": 3156182.54,
-                "convertible_amount_local": 3156182.54
-              },
-              "EUR": {
-                "currency": "EUR",
-                "total_rows": 474,
-                "convertible_rows": 474,
-                "total_amount_local": 4416576.390000001,
-                "convertible_amount_local": 4416576.390000001
-              },
-              "USD": {
-                "currency": "USD",
-                "total_rows": 596,
-                "convertible_rows": 596,
-                "total_amount_local": 5268684.14,
-                "convertible_amount_local": 5268684.14
-              }
-            }
-          },
-          "missing": []
-        },
+        "result": "<FxConversionResult: 1393 rows, selected_rows=1393, convertible_rows=1393, per_currency=3, missing=0>",
         "by": [
           "reporting_cost_centre"
         ]
       },
       "result_summary": {
-        "('ENG-EU',)": {
+        "ENG-EU": {
           "converted_amount_usd": 1521708.7180453,
           "coverage": {
             "selected_rows": 150,
@@ -314,7 +254,7 @@
             }
           }
         },
-        "('ENG-US',)": {
+        "ENG-US": {
           "converted_amount_usd": 1254870.59,
           "coverage": {
             "selected_rows": 142,
@@ -330,7 +270,7 @@
             }
           }
         },
-        "('MKT-US',)": {
+        "MKT-US": {
           "converted_amount_usd": 853906.97,
           "coverage": {
             "selected_rows": 140,
@@ -346,7 +286,7 @@
             }
           }
         },
-        "('OPS-AMER',)": {
+        "OPS-AMER": {
           "converted_amount_usd": 2096018.97,
           "coverage": {
             "selected_rows": 155,
@@ -362,7 +302,7 @@
             }
           }
         },
-        "('OPS-CA',)": {
+        "OPS-CA": {
           "converted_amount_usd": 1512779.2248054,
           "coverage": {
             "selected_rows": 147,
@@ -378,7 +318,7 @@
             }
           }
         },
-        "('OPS-EU',)": {
+        "OPS-EU": {
           "converted_amount_usd": 2503945.3815794,
           "coverage": {
             "selected_rows": 171,
@@ -394,7 +334,7 @@
             }
           }
         },
-        "('SGA-CA',)": {
+        "SGA-CA": {
           "converted_amount_usd": 739198.096634,
           "coverage": {
             "selected_rows": 176,
@@ -410,7 +350,7 @@
             }
           }
         },
-        "('SGA-EU',)": {
+        "SGA-EU": {
           "converted_amount_usd": 1234406.2370281,
           "coverage": {
             "selected_rows": 153,
@@ -652,37 +592,7 @@
       {
         "tool": "aggregate_usd",
         "arguments_summary": {
-          "result": {
-            "rows": 1393,
-            "coverage": {
-              "selected_rows": 1393,
-              "convertible_rows": 1393,
-              "per_currency": {
-                "CAD": {
-                  "currency": "CAD",
-                  "total_rows": 323,
-                  "convertible_rows": 323,
-                  "total_amount_local": 3156182.54,
-                  "convertible_amount_local": 3156182.54
-                },
-                "EUR": {
-                  "currency": "EUR",
-                  "total_rows": 474,
-                  "convertible_rows": 474,
-                  "total_amount_local": 4416576.390000001,
-                  "convertible_amount_local": 4416576.390000001
-                },
-                "USD": {
-                  "currency": "USD",
-                  "total_rows": 596,
-                  "convertible_rows": 596,
-                  "total_amount_local": 5268684.14,
-                  "convertible_amount_local": 5268684.14
-                }
-              }
-            },
-            "missing": []
-          }
+          "result": "<FxConversionResult: 1393 rows, selected_rows=1393, convertible_rows=1393, per_currency=3, missing=0>"
         },
         "result_summary": {
           "converted_amount_usd": 12780721.798092201,
@@ -719,43 +629,13 @@
       {
         "tool": "aggregate_usd_by",
         "arguments_summary": {
-          "result": {
-            "rows": 1393,
-            "coverage": {
-              "selected_rows": 1393,
-              "convertible_rows": 1393,
-              "per_currency": {
-                "CAD": {
-                  "currency": "CAD",
-                  "total_rows": 323,
-                  "convertible_rows": 323,
-                  "total_amount_local": 3156182.54,
-                  "convertible_amount_local": 3156182.54
-                },
-                "EUR": {
-                  "currency": "EUR",
-                  "total_rows": 474,
-                  "convertible_rows": 474,
-                  "total_amount_local": 4416576.390000001,
-                  "convertible_amount_local": 4416576.390000001
-                },
-                "USD": {
-                  "currency": "USD",
-                  "total_rows": 596,
-                  "convertible_rows": 596,
-                  "total_amount_local": 5268684.14,
-                  "convertible_amount_local": 5268684.14
-                }
-              }
-            },
-            "missing": []
-          },
+          "result": "<FxConversionResult: 1393 rows, selected_rows=1393, convertible_rows=1393, per_currency=3, missing=0>",
           "by": [
             "reporting_cost_centre"
           ]
         },
         "result_summary": {
-          "('ENG-EU',)": {
+          "ENG-EU": {
             "converted_amount_usd": 1521708.7180453,
             "coverage": {
               "selected_rows": 150,
@@ -771,7 +651,7 @@
               }
             }
           },
-          "('ENG-US',)": {
+          "ENG-US": {
             "converted_amount_usd": 1254870.59,
             "coverage": {
               "selected_rows": 142,
@@ -787,7 +667,7 @@
               }
             }
           },
-          "('MKT-US',)": {
+          "MKT-US": {
             "converted_amount_usd": 853906.97,
             "coverage": {
               "selected_rows": 140,
@@ -803,7 +683,7 @@
               }
             }
           },
-          "('OPS-AMER',)": {
+          "OPS-AMER": {
             "converted_amount_usd": 2096018.97,
             "coverage": {
               "selected_rows": 155,
@@ -819,7 +699,7 @@
               }
             }
           },
-          "('OPS-CA',)": {
+          "OPS-CA": {
             "converted_amount_usd": 1512779.2248054,
             "coverage": {
               "selected_rows": 147,
@@ -835,7 +715,7 @@
               }
             }
           },
-          "('OPS-EU',)": {
+          "OPS-EU": {
             "converted_amount_usd": 2503945.3815794,
             "coverage": {
               "selected_rows": 171,
@@ -851,7 +731,7 @@
               }
             }
           },
-          "('SGA-CA',)": {
+          "SGA-CA": {
             "converted_amount_usd": 739198.096634,
             "coverage": {
               "selected_rows": 176,
@@ -867,7 +747,7 @@
               }
             }
           },
-          "('SGA-EU',)": {
+          "SGA-EU": {
             "converted_amount_usd": 1234406.2370281,
             "coverage": {
               "selected_rows": 153,
@@ -891,6 +771,6 @@
     "refusal_reason": null,
     "clarification_options": []
   },
-  "duration_ms": 36,
+  "duration_ms": 35,
   "estimated_cost_usd": 0.0
 }
