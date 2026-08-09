@@ -153,14 +153,18 @@ cp .env.example .env
 
 `.env` define `LLM_MODEL`, la credencial del proveedor correspondiente
 (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` / `GROQ_API_KEY`,
-vía `litellm`), `LLM_MIN_CONFIDENCE`, y dos ceilings —
-`LLM_MAX_CALLS_PER_QUESTION`, `LLM_MAX_COST_USD_PER_QUESTION` — que acotan
-la capa de orquestación LLM. Ninguna de estas variables es requerida: `pytest
--q` y `python -m evals.run_evals` (sin `--live`) corren completos sin
-`.env`; el CLI en modo JSON tampoco lo toca. Solo el modo texto libre del
-CLI y `--live` en los evals leen estas variables, y ambos degradan solo, sin
-fallar, cuando no hay credencial (ver "Comportamiento sin credencial" más
-abajo).
+vía `litellm`), `LLM_MIN_CONFIDENCE`, y tres ceilings — `LLM_MAX_CALLS_PER_QUESTION`,
+`LLM_MAX_TOKENS_PER_QUESTION`, `LLM_MAX_COST_USD_PER_QUESTION` — que acotan
+la capa de orquestación LLM en pasos, tokens y coste. Ninguna de estas
+variables es requerida: `pytest -q` y `python -m evals.run_evals` (sin
+`--live`) corren completos sin `.env`; el CLI en modo JSON tampoco lo toca.
+Solo el modo texto libre del CLI y `--live` en los evals leen estas
+variables, y ambos degradan solo, sin fallar, cuando no hay credencial (ver
+"Comportamiento sin credencial" más abajo). Si `LLM_MODEL` apunta a un
+proveedor cuya key no está seteada pero hay otra credencial soportada
+presente, el CLI y la UI lo distinguen explícitamente de "no hay ninguna
+credencial" (`Settings.other_credentials_present`), en vez de solo señalar
+la variable que falta.
 
 ## Cómo correr
 
@@ -224,7 +228,19 @@ python -m finance_assistant.cli "What was our opex by cost centre in Q2 2024?" -
 
 `--model` es opcional y sobreescribe `LLM_MODEL` solo para esa corrida.
 
-**UI**: no construida — ver Limitaciones conocidas.
+**UI** — Streamlit, capa pura sobre `answer_question` (mismo path que el
+modo texto libre del CLI, sin lógica de análisis propia):
+
+```powershell
+streamlit run src/finance_assistant/ui/app.py
+```
+
+Pregunta → badge de estado → respuesta → evidencia clave → asunciones →
+advertencias → fuentes → "How I got this" (timeline expandible) → trace
+JSON crudo. Sin credencial, cae al mismo intérprete por palabras clave que
+el CLI, declarado en pantalla, nunca en silencio.
+
+![Finance Assistant Streamlit UI](docs/screenshot.png)
 
 ## Comportamiento sin credencial
 
@@ -256,9 +272,11 @@ src/finance_assistant/
                    registry, orquestador (interpretar -> acotar -> resolver -> correr)
   data/           loaders + validación de schema de los CSV de entrada
   cli.py          CLI: JSON de pregunta o texto libre -> EvidenceBundle + trace
+  ui/app.py       Streamlit -- vista pura sobre orchestration.orchestrator.answer_question
   config.py       constantes de todo el proyecto (nunca hardcodeadas en tools/)
 config/
-  policy_rules.yaml   umbrales de la política T&E, citando su sección fuente
+  policy_rules.yaml       umbrales de la política T&E, citando su sección fuente
+  benchmark_targets.yaml  targets provider/model para scripts/benchmark_providers.py
 data/            CSVs del challenge + documentos de política/contratos/memo
 docs/
   PROMPT_MAESTRO.md   reglas R1-R8, modelo de evidencia, las 8 preguntas
@@ -266,16 +284,21 @@ evals/           evals/run_evals.py — set determinista de las 8 preguntas + ti
 examples/questions/  3 JSON de pregunta de ejemplo para el CLI
 tests/           27 archivos de test, uno por tool/workflow/módulo de evidence/orchestration
 traces/          salida de cada corrida (gitignored, salvo traces/samples/)
-traces/samples/  3 traces representativos committeados (ver más abajo)
-scripts/profile_data.py   profiler genérico de anomalías del dataset (Fase A)
+traces/samples/  4 traces representativos committeados (ver más abajo)
+scripts/profile_data.py        profiler genérico de anomalías del dataset (Fase A)
+scripts/benchmark_providers.py corre las 8 preguntas (paraphraseadas) contra
+                                varios targets provider/model y verifica que
+                                bundle.result sea idéntico entre los que
+                                coinciden en intent+parámetros (Fase J)
 ```
 
 ## Trace de ejemplo
 
 Cada corrida escribe un JSON en `traces/` (gitignored — así las corridas de
-demo no ensucian el repo). Hay 3 traces representativos committeados en
+demo no ensucian el repo). Hay 4 traces representativos committeados en
 `traces/samples/`, generados contra los datos reales del challenge — uno por
-cada categoría que `docs/PROMPT_MAESTRO.md` pide documentar:
+cada categoría que `docs/PROMPT_MAESTRO.md` pide documentar, más uno que
+demuestra la orquestación LLM real:
 
 - **`20260809T003021Z_opex_by_cost_centre_e542453c.json`** — respuesta
   numérica correcta (el mismo Q1 de arriba). `steps[]` muestra la secuencia
@@ -291,27 +314,24 @@ cada categoría que `docs/PROMPT_MAESTRO.md` pide documentar:
 - **`20260809T003023Z_te_policy_check_55fee151.json`** — análisis de
   política (Q6), con citas de `search_documents` a
   `travel_expense_policy.md` por cada finding.
+- **`20260809T165318Z_travel_comparison_60da772e.json`** — Q2 (travel
+  comparison), generado en modo texto libre contra Groq real
+  (`groq/llama-3.3-70b-versatile`), sin `--live` ni mock: `model_calls`
+  trae un `ModelCall` real — `prompt_tokens=988`, `completion_tokens=65`,
+  `estimated_cost_usd=0.00063427` — en vez de la lista vacía de los otros
+  tres, que vienen del CLI en modo JSON y nunca pasan por el intérprete LLM.
 
 Todo trace comparte el mismo schema:
 `run_id, started_at, question, status, date_basis, steps[], model_calls[],
-final_evidence, duration_ms, estimated_cost_usd`. `model_calls` está vacío
-en los tres porque los 3 traces committeados vienen del CLI en modo JSON,
-que nunca pasa por el intérprete LLM. `orchestration.orchestrator.answer_question`
-sí puebla `model_calls` — un `ModelCall` por cada llamada real al LLM, con
-proveedor, modelo, tokens y costo estimado — cuando la pregunta se
-resuelve en modo texto libre con credencial; con el fallback por palabras
-clave se mantiene vacío, correctamente, porque no se hizo ninguna llamada.
+final_evidence, duration_ms, estimated_cost_usd`.
+`orchestration.orchestrator.answer_question` puebla `model_calls` — un
+`ModelCall` por cada llamada real al LLM, con proveedor, modelo, tokens y
+costo estimado — cuando la pregunta se resuelve en modo texto libre con
+credencial; con el fallback por palabras clave se mantiene vacío,
+correctamente, porque no se hizo ninguna llamada.
 
 ## Limitaciones conocidas
 
-- **No hay UI.** `docs/PROMPT_MAESTRO.md` sugiere una capa Streamlit sobre
-  el mismo `answer_question`; no se construyó. El CLI (modo JSON y modo
-  texto libre) es hoy la única interfaz.
-- **El CLI no puede pasar `DuplicateDetectionRules`.** Es un parámetro
-  tipado que no tiene una forma JSON declarada; `duplicate_payment_check`
-  siempre corre con sus valores por default (documentado en `cli.py`).
-- **Solo 3 de las 8 preguntas tienen JSON de ejemplo** en
-  `examples/questions/` (Q1, Q3, Q6).
 - **Los alias de vendor se detectan, no se resuelven.**
   `detect_alias_clusters` devuelve clusters candidatos por normalización
   mecánica de nombre; no existe `canonical_vendor_id` ni un flujo para
@@ -322,3 +342,6 @@ clave se mantiene vacío, correctamente, porque no se hizo ninguna llamada.
 - **El Answer Renderer opcional no existe.** `evidence/render.py::render_bundle_text`
   sigue siendo el único renderer; convertir un `EvidenceBundle` ya decidido
   en prosa vía LLM queda fuera del alcance entregado (ver `ARCHITECTURE.md`).
+- **El CLI no puede pasar `DuplicateDetectionRules`.** Es un parámetro
+  tipado que no tiene una forma JSON declarada; `duplicate_payment_check`
+  siempre corre con sus valores por default (documentado en `cli.py`).
