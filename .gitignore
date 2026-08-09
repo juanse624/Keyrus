@@ -23,3 +23,7 @@ Thumbs.db
 # Traces de corridas (demo/live) -- los 3 representativos committeados
 # viven en traces/samples/, fuera de este patrón.
 traces/*.json
+
+# Salida por defecto de scripts/benchmark_providers.py (Fase J) -- una
+# corrida ad hoc bajo demanda, nunca artefactos a commitear.
+benchmark/
