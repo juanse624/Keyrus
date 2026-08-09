@@ -1,0 +1,268 @@
+# Meridian Finance Analyst Assistant
+
+Sistema de análisis financiero determinista para un challenge técnico. Una
+pregunta en lenguaje natural se interpreta con un LLM, pero cada hecho — cada
+suma, conversión de moneda, ranking o comparación contra un umbral — lo
+establece Python puro. Un Evidence Gate determinista decide si esos hechos
+alcanzan para responder (`ANSWER`), responder con reservas (`PARTIAL`),
+pedir aclaración (`NEEDS_CLARIFICATION`) o rechazar (`REFUSED`) — el modelo
+nunca participa en esa decisión.
+
+275 tests pasan. Los 8 evals deterministas pasan (8/8). Los ocho workflows
+analíticos del challenge tienen un status esperado (`ANSWER` / `PARTIAL` /
+`REFUSED` / `NEEDS_CLARIFICATION`) definido y verificado por esos evals.
+
+> Ver [`ARCHITECTURE.md`](ARCHITECTURE.md) para el diseño completo y
+> [`NOTES.md`](NOTES.md) para el diario de desarrollo.
+
+## Pregunta de ejemplo con salida real
+
+`examples/questions/q1_opex_q2_2024.json`:
+
+```json
+{"intent": "opex_by_cost_centre", "question": "What was our opex by cost centre in Q2?", "params": {"quarter": "Q2", "year": 2024}}
+```
+
+Corrida real (`python -m finance_assistant.cli examples/questions/q1_opex_q2_2024.json`):
+
+```
+status: answer
+intent: opex_by_cost_centre
+assumptions:
+  - date basis: accrual_date
+  - opex perimeter: chart_of_accounts.statement_line == 'Operating Expenses'
+  - the perimeter did not exclude any row: every chart-of-accounts account belongs to the declared line
+  - R4 reporting_cost_centre normalization applied before aggregation
+coverage: selected_rows=1393 computable_rows=1393 computable_amount_pct=100.0
+result:
+  quarter: Q2
+  year: 2024
+  date_basis: accrual_date
+  opex_perimeter:
+    statement_line: Operating Expenses
+  opex_perimeter_rows: 1393
+  total_rows_before_perimeter_filter: 1393
+  total_usd: 12780721.798092201
+  by_cost_centre_usd:
+    ENG-EU: 1521708.7180453
+    ENG-US: 1254870.59
+    MKT-US: 853906.97
+    OPS-AMER: 2096018.97
+    OPS-CA: 1512779.2248054
+    OPS-EU: 2503945.3815794
+    SGA-CA: 739198.096634
+    SGA-EU: 1234406.2370281
+    SGA-US: 1063887.6099999999
+  unmapped_account_rows: 0
+```
+
+Notar `reporting_cost_centre normalization`: el memo del board declara una
+reorganización a mitad de año (`OPS-NA -> OPS-AMER`, efectiva 2024-07-01);
+la normalización se aplica solo donde corresponde y queda declarada como
+assumption, nunca inferida en silencio.
+
+## Rechazo con evidencia parcial
+
+No todas las preguntas tienen respuesta exacta, y un rechazo no siempre
+significa manos vacías. `examples/questions/q3_consolidated_q3_2024.json`:
+
+```json
+{"intent": "consolidated_spend", "question": "What was our consolidated spend in Q3, in USD?", "params": {"quarter": "Q3", "year": 2024}}
+```
+
+Corrida real (`python -m finance_assistant.cli examples/questions/q3_consolidated_q3_2024.json`):
+
+```
+status: refused
+intent: consolidated_spend
+refusal_reason: exact consolidated USD total for Q3 2024 cannot be stated: 1 currency/period combination(s) have no fx_rates.csv rate (EUR). Computable components and non-convertible local amounts are reported in calculations.
+assumptions:
+  - date basis: accrual_date
+warnings:
+  - a required FX rate is missing and affects the requested total (forced REFUSED)
+  - fx coverage is incomplete (1201/1348 rows computable)
+missing_evidence:
+  - what: FX rate for EUR in 2024-09
+    reason: 147 row(s) totaling 1231309.12 in local currency could not be converted to USD
+    reason_code: missing_fx_rate
+coverage: selected_rows=1348 computable_rows=1201 computable_amount_pct=89.09495548961425
+calculations:
+  - description: computable USD total (FX-convertible rows only)
+    operation: sum
+    inputs: {'selected_rows': 1348, 'convertible_rows': 1201}
+    output: 10003879.9533026
+  - description: computable components by entity (USD)
+    operation: groupby_sum
+    inputs: {'by': 'entity'}
+    output: {'MI-CA': 1990231.3207112998, 'MI-NL': 3134109.4025913, 'MI-US': 4879539.23}
+  - description: non-convertible local amount by currency
+    operation: groupby_sum
+    inputs: {'by': 'currency', 'source': 'MissingFXRate.affected_amount_local'}
+    output: {'EUR': 1231309.12}
+```
+
+Falta la tasa EUR de 2024-09, así que el total exacto genuinamente no
+existe y `result` es `null`. Pero el rechazo no es mudo: `calculations`
+entrega el 89.09% del cuadro que sí es computable — total USD, desglose por
+entidad, y el monto local que quedó sin convertir — con total claridad
+sobre qué falta y por qué. Por qué esto es una decisión de diseño deliberada,
+no un efecto colateral, se argumenta en
+[`ARCHITECTURE.md`](ARCHITECTURE.md#discrepancia-argumentada).
+
+## Prerrequisitos
+
+- Python ≥ 3.11
+- git
+
+Este proyecto se desarrolló en Windows con PowerShell 5.1; los comandos de
+esta guía se dan para PowerShell y para bash.
+
+## Instalación
+
+**PowerShell:**
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
+```
+
+**bash:**
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+Si corrés un comando con el Python del sistema en vez del `.venv` del
+proyecto, `cli.py` y `evals/run_evals.py` lo detectan y te dan el comando
+exacto para arreglarlo en vez de un traceback crudo.
+
+## Configuración
+
+```powershell
+Copy-Item .env.example .env
+```
+
+```bash
+cp .env.example .env
+```
+
+`.env` define `LLM_MODEL`, `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` (vía
+`litellm`) y dos ceilings — `LLM_MAX_CALLS_PER_QUESTION`,
+`LLM_MAX_COST_USD_PER_QUESTION` — que acotan el costo de la capa de
+orquestación LLM. `[TODO — confirmar si tests/evals/CLI siguen sin requerir
+estas variables una vez orchestration/ esté integrado, o si alguno de los
+tres ya las necesita.]`
+
+## Cómo correr
+
+**Tests:**
+
+```powershell
+pytest -q
+```
+
+275 tests, corren en ~6 segundos, sin tocar `data/` (los fixtures escriben
+CSVs sintéticos en `tmp_path`).
+
+**Evals** (el set determinista de las 8 preguntas analíticas del challenge):
+
+```powershell
+python -m evals.run_evals
+```
+
+Exit code no-cero si algo falla; el tier determinista pasa hoy
+`deterministic tier: 8/8 case(s) passed`. Acepta `--live` para además correr
+las mismas 8 preguntas contra la capa de orquestación LLM. [TODO —
+actualizar con el resultado real de `--live` una vez orchestration/ esté
+implementado.]
+
+**CLI** — resuelve una pregunta estructurada (JSON) contra un intent y
+datos reales:
+
+```powershell
+python -m finance_assistant.cli examples/questions/q1_opex_q2_2024.json
+```
+
+Solo 3 de las 8 preguntas tienen JSON de ejemplo en
+`examples/questions/`; ver Limitaciones conocidas.
+
+**UI**:
+
+```powershell
+streamlit run src/finance_assistant/ui/app.py
+```
+
+`[TODO — completar esta sección con el layout real de la UI una vez esté
+construida: qué se ve en pantalla, cómo se ingresa una pregunta, cómo se
+lee el status badge y el trace expandible.]`
+
+## Estructura del proyecto
+
+```
+src/finance_assistant/
+  tools/        10 funciones deterministas (dataclasses), una por regla R1-R8
+  workflows/    un plan fijo por cada una de las 8 preguntas analíticas
+  evidence/     EvidenceBundle (pydantic), Evidence Gate, renderer, trace
+  data/         loaders + validación de schema de los CSV de entrada
+  cli.py        CLI mínima: JSON de pregunta -> EvidenceBundle + trace
+  config.py     constantes de todo el proyecto (nunca hardcodeadas en tools/)
+config/
+  policy_rules.yaml   umbrales de la política T&E, citando su sección fuente
+data/            CSVs del challenge + documentos de política/contratos/memo
+docs/
+  PROMPT_MAESTRO.md   reglas R1-R8, modelo de evidencia, las 8 preguntas
+evals/           evals/run_evals.py — set determinista de las 8 preguntas
+examples/questions/  3 JSON de pregunta de ejemplo para el CLI
+tests/           21 archivos de test, uno por tool/workflow/módulo de evidence
+traces/          3 traces representativos committeados (ver más abajo)
+scripts/profile_data.py   profiler genérico de anomalías del dataset (Fase A)
+```
+
+## Trace de ejemplo
+
+Cada corrida escribe un JSON en `traces/`. Hay 3 traces representativos
+committeados, generados contra los datos reales del challenge — uno por cada
+categoría que `docs/PROMPT_MAESTRO.md` pide documentar:
+
+- **`20260809T003021Z_opex_by_cost_centre_e542453c.json`** — respuesta
+  numérica correcta (el mismo Q1 de arriba). `steps[]` muestra la secuencia
+  real de 6 tool calls: `query_ledger` (1393/10916 filas del trimestre) →
+  `resolve_account_hierarchy` (join temporal COA, 1393/1393 mapeadas) →
+  `normalize_reporting_cost_centre` (aplica la transición, citando la
+  sección del memo) → `convert_to_usd` → `aggregate_usd` →
+  `aggregate_usd_by`. `final_evidence` es el `EvidenceBundle` completo, sin
+  tocar.
+- **`20260809T003022Z_consolidated_spend_dd56ecac.json`** — el mismo
+  rechazo con evidencia parcial mostrado arriba (Q3), con el `steps[]`
+  completo de tool calls detrás del resultado.
+- **`20260809T003023Z_te_policy_check_55fee151.json`** — análisis de
+  política (Q6), con citas de `search_documents` a
+  `travel_expense_policy.md` por cada finding.
+
+Todo trace comparte el mismo schema:
+`run_id, started_at, question, status, date_basis, steps[], model_calls[],
+final_evidence, duration_ms, estimated_cost_usd`. `model_calls` está vacío
+en los tres. [TODO — actualizar esta nota con cómo se puebla `model_calls`
+una vez orchestration/ esté implementado.]
+
+## Limitaciones conocidas
+
+[TODO — cerrar esta sección al final. orchestration/ y la UI se están
+construyendo hoy; lo que se lista abajo son limitaciones que siguen siendo
+ciertas independientemente de esa capa.]
+
+- **El CLI no puede pasar `DuplicateDetectionRules`.** Es un parámetro
+  tipado que no tiene una forma JSON declarada; `duplicate_payment_check`
+  siempre corre con sus valores por default (documentado en `cli.py`).
+- **Solo 3 de las 8 preguntas tienen JSON de ejemplo** en
+  `examples/questions/` (Q1, Q3, Q6).
+- **Los alias de vendor se detectan, no se resuelven.**
+  `detect_alias_clusters` devuelve clusters candidatos por normalización
+  mecánica de nombre; no existe `canonical_vendor_id` ni un flujo para
+  promover un cluster a identidad consolidada — por diseño (R6: nunca
+  fusionar automáticamente por similitud de nombre), pero es una limitación
+  real para un ranking exacto de top-vendors cuando el clustering
+  cambiaría el top-N.
