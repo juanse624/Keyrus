@@ -217,15 +217,17 @@ docs/
 evals/           evals/run_evals.py — set determinista de las 8 preguntas
 examples/questions/  3 JSON de pregunta de ejemplo para el CLI
 tests/           21 archivos de test, uno por tool/workflow/módulo de evidence
-traces/          3 traces representativos committeados (ver más abajo)
+traces/          salida de cada corrida (gitignored, salvo traces/samples/)
+traces/samples/  3 traces representativos committeados (ver más abajo)
 scripts/profile_data.py   profiler genérico de anomalías del dataset (Fase A)
 ```
 
 ## Trace de ejemplo
 
-Cada corrida escribe un JSON en `traces/`. Hay 3 traces representativos
-committeados, generados contra los datos reales del challenge — uno por cada
-categoría que `docs/PROMPT_MAESTRO.md` pide documentar:
+Cada corrida escribe un JSON en `traces/` (gitignored — así las corridas de
+demo no ensucian el repo). Hay 3 traces representativos committeados en
+`traces/samples/`, generados contra los datos reales del challenge — uno por
+cada categoría que `docs/PROMPT_MAESTRO.md` pide documentar:
 
 - **`20260809T003021Z_opex_by_cost_centre_e542453c.json`** — respuesta
   numérica correcta (el mismo Q1 de arriba). `steps[]` muestra la secuencia

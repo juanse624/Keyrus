@@ -97,15 +97,38 @@ class LiteLLMClient:
         import litellm
 
         t0 = time.perf_counter()
-        response = litellm.completion(
-            model=model,
-            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-            response_format=response_model,
-        )
+        try:
+            response = litellm.completion(
+                model=model,
+                messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+                response_format=response_model,
+            )
+        except litellm.BadRequestError:
+            # Some providers' strict tool-schema enforcement (observed on
+            # Groq's llama tool-calling) rejects the call outright when the
+            # model omits a null-valued optional property from its tool
+            # arguments, even though the schema marks it nullable. Fall back
+            # to plain JSON-object mode with the schema spelled out in the
+            # prompt instead of enforced server-side; `response_model` already
+            # tolerates missing optional fields on parse, so this degrades
+            # gracefully rather than surfacing as an interpreter failure.
+            schema_prompt = (
+                f"{system}\n\nRespond with ONLY a JSON object matching this JSON schema. "
+                f"Omit any field you are not confident about.\n{response_model.model_json_schema()}"
+            )
+            response = litellm.completion(
+                model=model,
+                messages=[{"role": "system", "content": schema_prompt}, {"role": "user", "content": user}],
+                response_format={"type": "json_object"},
+            )
         latency_ms = int((time.perf_counter() - t0) * 1000)
         parsed = response_model.model_validate_json(response.choices[0].message.content)
         try:
-            cost = litellm.completion_cost(completion_response=response)
+            # `model=` must be passed explicitly: `response.model` echoes back
+            # the provider's raw model name without the "groq/"-style prefix
+            # litellm's cost lookup needs, which otherwise raises even when
+            # pricing for this exact model is in litellm.model_cost.
+            cost = litellm.completion_cost(completion_response=response, model=model)
         except Exception:
             cost = "unknown"
         return LLMCompletion(

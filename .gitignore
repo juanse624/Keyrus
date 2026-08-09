@@ -19,3 +19,7 @@ venv/
 # Sistema
 .DS_Store
 Thumbs.db
+
+# Traces de corridas (demo/live) -- los 3 representativos committeados
+# viven en traces/samples/, fuera de este patrón.
+traces/*.json

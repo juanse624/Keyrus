@@ -102,7 +102,7 @@ propaga como `MissingFXRate` estructurado (moneda, mes, filas afectadas,
 monto local afectado). Cobertura menor al 100% nunca produce `ANSWER`.
 
 Ejemplo real, del trace committeado
-`traces/20260809T003022Z_consolidated_spend_dd56ecac.json` (Q3, "consolidated
+`traces/samples/20260809T003022Z_consolidated_spend_dd56ecac.json` (Q3, "consolidated
 spend in USD"): de 1.348 filas seleccionadas para el trimestre, 1.201 son
 convertibles (89.09%) porque falta la tasa EUR de 2024-09 (147 filas, USD
 1.231.309,12 en moneda local sin convertir). El bundle resultante tiene
