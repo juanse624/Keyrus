@@ -14,6 +14,16 @@ import dotenv
 
 _DOTENV_LOADED = False
 
+# Providers litellm can route to that this project documents in `.env.example`
+# -- used to report "no credential for any supported provider" instead of
+# blaming whichever single provider `LLM_MODEL` happens to default to.
+SUPPORTED_CREDENTIAL_ENV_VARS: tuple[str, ...] = (
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "GEMINI_API_KEY",
+    "GROQ_API_KEY",
+)
+
 
 def _ensure_dotenv_loaded() -> None:
     global _DOTENV_LOADED
@@ -38,6 +48,15 @@ class Settings:
     def has_credential(self, env: Mapping[str, str] | None = None) -> bool:
         env = env if env is not None else os.environ
         return bool(env.get(self.credential_env_var(), "").strip())
+
+    def other_credentials_present(self, env: Mapping[str, str] | None = None) -> tuple[str, ...]:
+        """Supported provider credentials that are set but don't match
+        `llm_model`'s provider -- lets a caller distinguish "nothing
+        configured" from "wrong provider selected" instead of only ever
+        naming `credential_env_var()`."""
+        env = env if env is not None else os.environ
+        needed = self.credential_env_var()
+        return tuple(var for var in SUPPORTED_CREDENTIAL_ENV_VARS if var != needed and env.get(var, "").strip())
 
 
 def load_settings(*, model: str | None = None, env: Mapping[str, str] | None = None) -> Settings:

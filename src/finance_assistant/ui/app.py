@@ -17,7 +17,7 @@ from finance_assistant.evidence.models import AnswerStatus, EvidenceBundle
 from finance_assistant.evidence.trace import RunTrace
 from finance_assistant.orchestration.intents import Intent
 from finance_assistant.orchestration.orchestrator import answer_question
-from finance_assistant.orchestration.settings import load_settings
+from finance_assistant.orchestration.settings import SUPPORTED_CREDENTIAL_ENV_VARS, load_settings
 
 EXAMPLE_QUESTIONS = [
     "What was our opex by cost centre in Q2?",
@@ -239,10 +239,20 @@ def main() -> None:
     if settings.has_credential():
         st.success(f"LLM credential detected -- using `{settings.llm_model}`.")
     else:
-        st.warning(
-            f"No credential found (`{settings.credential_env_var()}` is not set) -- "
-            "using the deterministic keyword fallback, same as the CLI without a credential."
-        )
+        checked = ", ".join(f"`{var}`" for var in SUPPORTED_CREDENTIAL_ENV_VARS)
+        other_present = settings.other_credentials_present()
+        if other_present:
+            found = ", ".join(f"`{var}`" for var in other_present)
+            st.warning(
+                f"`LLM_MODEL={settings.llm_model}` needs `{settings.credential_env_var()}`, which is not "
+                f"set (found {found} instead) -- using the deterministic keyword fallback. Set `LLM_MODEL` "
+                "to match the credential you have, or add the missing one."
+            )
+        else:
+            st.warning(
+                f"No credential found for any supported provider -- checked {checked} -- "
+                "using the deterministic keyword fallback, same as the CLI without a credential."
+            )
 
     with st.form("question_form"):
         st.text_area("Ask a question", key="question", height=100)
