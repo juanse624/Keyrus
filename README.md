@@ -17,6 +17,11 @@ esos evals.
 > Ver [`ARCHITECTURE.md`](ARCHITECTURE.md) para el diseño completo y
 > [`NOTES.md`](NOTES.md) para el diario de desarrollo.
 
+## Documentación
+
+- [`Meridian_Documentacion_Tecnica_ESP_Juan_Tellez.pdf`](docs/Meridian_Documentacion_Tecnica_ESP_Juan_Tellez.pdf) — documento técnico y funcional: diseño, decisiones y alcance del challenge.
+- Presentación ([ESP](docs/Meridian_Presentacion_ESP_Juan_Tellez.pptx) / [EN](docs/Meridian_Presentation_EN_Juan_Tellez.pptx)) — deck de presentación del proyecto, en español e inglés.
+
 ## Pregunta de ejemplo con salida real
 
 `examples/questions/q1_opex_q2_2024.json`:
