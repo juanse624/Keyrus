@@ -76,6 +76,14 @@ def _check_ceilings(
             intent, assumptions, f"model call ceiling exceeded: {len(model_calls)} call(s) > max {settings.max_calls_per_question}"
         )
 
+    total_tokens = sum(c.prompt_tokens + c.completion_tokens for c in model_calls)
+    if total_tokens > settings.max_tokens_per_question:
+        return _error_bundle(
+            intent,
+            assumptions,
+            f"model token ceiling exceeded: {total_tokens} token(s) > max {settings.max_tokens_per_question}",
+        )
+
     known_costs = [c.estimated_cost_usd for c in model_calls if c.estimated_cost_usd != "unknown"]
     total_known_cost = sum(known_costs) if known_costs else 0.0
     if total_known_cost > settings.max_cost_usd_per_question:

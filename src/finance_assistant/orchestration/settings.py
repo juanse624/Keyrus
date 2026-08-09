@@ -36,6 +36,7 @@ def _ensure_dotenv_loaded() -> None:
 class Settings:
     llm_model: str
     max_calls_per_question: int
+    max_tokens_per_question: int
     max_cost_usd_per_question: float
     min_confidence: float
 
@@ -71,6 +72,7 @@ def load_settings(*, model: str | None = None, env: Mapping[str, str] | None = N
     return Settings(
         llm_model=model or env.get("LLM_MODEL", "anthropic/claude-sonnet-4-5"),
         max_calls_per_question=int(env.get("LLM_MAX_CALLS_PER_QUESTION", "5")),
+        max_tokens_per_question=int(env.get("LLM_MAX_TOKENS_PER_QUESTION", "2000")),
         max_cost_usd_per_question=float(env.get("LLM_MAX_COST_USD_PER_QUESTION", "0.50")),
         min_confidence=float(env.get("LLM_MIN_CONFIDENCE", "0.5")),
     )

@@ -217,6 +217,21 @@ def test_call_count_ceiling_exceeded_returns_error(tmp_path, fake_llm_client):
     assert any("call" in w for w in bundle.warnings)
 
 
+def test_token_ceiling_exceeded_returns_error(tmp_path, fake_llm_client):
+    client = fake_llm_client(
+        IntentRequest(intent=Intent.OPEX_BY_COST_CENTRE, confidence=0.9), prompt_tokens=1000, completion_tokens=500
+    )
+    settings = load_settings(
+        env={"LLM_MODEL": "anthropic/x", "LLM_MAX_TOKENS_PER_QUESTION": "100", "LLM_MIN_CONFIDENCE": "0.0"}
+    )
+
+    bundle, _trace = answer_question("some question", data_dir=tmp_path, llm_client=client, settings=settings)
+
+    assert bundle.status == AnswerStatus.ERROR
+    assert any("ceiling" in w for w in bundle.warnings)
+    assert any("token" in w for w in bundle.warnings)
+
+
 def test_cost_ceiling_exceeded_returns_error(tmp_path, fake_llm_client):
     client = fake_llm_client(IntentRequest(intent=Intent.OPEX_BY_COST_CENTRE, confidence=0.9), estimated_cost_usd=10.0)
     settings = load_settings(env={"LLM_MODEL": "anthropic/x", "LLM_MAX_COST_USD_PER_QUESTION": "0.01", "LLM_MIN_CONFIDENCE": "0.0"})
