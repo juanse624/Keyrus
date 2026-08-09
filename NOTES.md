@@ -105,6 +105,43 @@ bundles `NEEDS_CLARIFICATION` en los que, por definición, no se había
 aplicado ningún default — en dos módulos distintos. Los tests que existían
 en ese momento no lo cazaban.
 
+**5. El mock validaba mi contrato, no el del proveedor.** Toda la capa de
+orquestación (`orchestration/`) se construyó y testeó contra un cliente LLM
+simulado — `fake_llm_client` en los tests, nunca una llamada real. Los 340
+tests pasaban, incluidos los de `interpreter.py` y `orchestrator.py`. La
+primera vez que se corrió contra un proveedor real (Groq, `groq/llama-3.3-70b-versatile`)
+aparecieron dos bugs que ningún test cazaba, porque ningún test tocaba la
+superficie donde vivían.
+
+El primero: `litellm.completion_cost()` se llamaba sin `model=` explícito.
+`response.model` — lo que el objeto de respuesta trae de vuelta — es el
+nombre crudo del modelo tal como lo devuelve el proveedor, sin el prefijo
+(`"groq/..."`) que la tabla de precios de litellm necesita para resolverlo.
+La resolución fallaba, la excepción se tragaba (`except Exception: cost =
+"unknown"`), y el costo quedaba siempre en `"unknown"` — no un valor
+incorrecto, simplemente nunca el real. Se corrigió pasando `model=` de
+forma explícita a `completion_cost()` en vez de dejar que dependiera del
+eco del proveedor (`interpreter.py:126-133`).
+
+El segundo, más grave: la validación de esquema de tool-calling de Groq
+rechaza la llamada de plano cuando el modelo omite del JSON un campo
+opcional con valor nulo, aun cuando el schema de Pydantic lo declara
+nullable — un `litellm.BadRequestError` en tiempo de llamada, no un error
+de parseo después. Esto rompía 3 de las 8 preguntas, que volvían como
+`UNKNOWN` con `status=ERROR` en vez de resolver el intent real. Se
+resolvió con un reintento explícito: al capturar ese `BadRequestError`
+puntual, la segunda llamada pide JSON plano (`response_format={"type":
+"json_object"}`) con el schema escrito en el prompt en vez de impuesto
+server-side — `IntentRequest` ya tolera campos opcionales ausentes al
+parsear, así que el reintento degrada con gracia en vez de propagar el
+fallo (`interpreter.py:106-123`).
+
+La lección, escrita sin dramatismo: el cliente simulado validaba mi propio
+contrato, no el del proveedor. Un mock confirma que el código hace lo que
+yo creo que debe hacer; no confirma que el mundo se comporte como yo creo.
+Por eso conseguí una credencial real en vez de dar la capa por verificada
+con 340 tests en verde.
+
 ## Qué recorté
 
 `canonical_vendor_id` / merge real de vendors. `detect_alias_clusters`
@@ -115,6 +152,13 @@ pero además es, explícitamente, funcionalidad que quedó fuera del alcance
 entregado: no existe ningún flujo — humano o automático — para promover un
 cluster candidato a una identidad de vendor consolidada.
 
+La UI de Streamlit tampoco se construyó — `docs/PROMPT_MAESTRO.md` la
+sugiere como capa opcional sobre `answer_question`, y el CLI (modo JSON y
+modo texto libre) quedó como la única interfaz entregada. El Answer
+Renderer opcional (prosa desde un `EvidenceBundle` ya decidido, vía LLM)
+tampoco se implementó; `render_bundle_text` sigue siendo el único
+renderer, y es determinista.
+
 ## Tiempo invertido
 
 Día y medio, aproximadamente 10-12 horas. Consistente con los timestamps de
@@ -123,25 +167,29 @@ las 19:30.
 
 ## Con dos días más
 
-TODO — sección a cerrar al final, cuando `orchestration/` y la UI estén
-construidas; no es trabajo futuro sino parte del entregable que todavía está
-en curso. Dirección ya decidida, sin redactar todavía:
+Cinco direcciones, en orden de lo que reduciría más riesgo primero:
 
-- Medir coste real por tool y por llamada a modelo, con presupuesto de costo
-  por pregunta — no solo el techo de número de llamadas.
-- Un catálogo semántico versionado para las convenciones no escritas (base
-  de devengo, perímetros, reglas de restatement), en vez de configuración
-  dispersa entre módulos.
-- Ampliar el eval set más allá de las ocho preguntas: casos adversariales
-  que intenten inducir una respuesta segura donde no la hay, y un dataset
-  sintético con anomalías distintas para validar que la detección es
-  genérica de verdad y no está ajustada a este dataset en particular.
-- Resolución de identidad de proveedor con un maestro canónico y proceso de
-  aprobación humana, no fuzzy matching automático.
-- Observabilidad: métricas de la distribución de estados
-  (`ANSWER`/`PARTIAL`/`REFUSED`/`NEEDS_CLARIFICATION`) a lo largo del
-  tiempo, para detectar si el sistema empieza a rechazar más o menos de lo
-  esperado.
+Medir coste real por tool y por llamada a modelo, con presupuesto de costo
+por pregunta, no solo el techo de número de llamadas que ya existe
+(`LLM_MAX_COST_USD_PER_QUESTION` acota el total, pero no distingue qué
+componente de una pregunta compuesta se lo está comiendo). Un catálogo
+semántico versionado para las convenciones no escritas del dominio — base
+de devengo, perímetros de opex, reglas de restatement de cost-centre — en
+vez de la configuración dispersa entre `config.py`, `config/policy_rules.yaml`
+y los defaults de cada workflow que existe hoy. Ampliar el eval set más
+allá de las ocho preguntas del challenge: casos adversariales que intenten
+inducir una respuesta segura donde no la hay, y un dataset sintético con
+anomalías distintas — no las mismas 894/114/228/864 filas de este dataset —
+para confirmar que la detección de R1-R7 es genérica de verdad y no quedó
+calibrada, sin darme cuenta, a las particularidades de este fixture.
+Resolución de identidad de proveedor con un maestro canónico y un proceso
+de aprobación humana explícito, en vez de dejar `detect_alias_clusters`
+como el techo funcional (ver "Qué recorté"). Y observabilidad sobre la
+distribución de estados (`ANSWER`/`PARTIAL`/`REFUSED`/`NEEDS_CLARIFICATION`)
+a lo largo del tiempo, para detectar si el sistema empieza a rechazar más o
+menos de lo esperado — la clase de señal que ni un test ni un eval
+puntual puede dar, porque depende de la distribución real de preguntas que
+llegan, no de un caso fijo.
 
 ---
 

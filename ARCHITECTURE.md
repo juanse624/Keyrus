@@ -46,7 +46,8 @@ aritmética ni evidencia:
    decidido en prosa. Recibe el bundle completo, no puede agregar hechos ni
    cambiar el `status`.
 
-**Estado de esta capa**: el Question Interpreter está construido
+**Estado de esta capa**: el Question Interpreter está construido y
+verificado contra un proveedor real
 (`orchestration/{intents,interpreter,plans,orchestrator}.py`, Fase H).
 `orchestration.interpreter.interpret_with_llm` hace la única llamada al
 LLM, con salida estructurada `IntentRequest` vía litellm; sin credencial
@@ -60,7 +61,10 @@ completa los parámetros que el modelo nunca puede conocer (años/fechas del
 dataset) antes de ejecutarlo. `evidence/render.py::render_bundle_text`
 sigue siendo el único renderer — el Answer Renderer (opcional, prosa desde
 un `EvidenceBundle` ya decidido) queda fuera del alcance de esta fase y
-sigue pendiente.
+sigue pendiente. La capa se corrió una vez contra un proveedor real (Groq)
+para verificarla más allá de un cliente LLM simulado; los dos bugs reales
+que esa corrida destapó, y por qué ningún test los cazaba, están narrados
+en `NOTES.md`.
 
 ## Qué es determinista
 
@@ -141,11 +145,23 @@ un `repr()` feo de tuple keys de groupby (`('MI-CA',)` en vez de `MI-CA`).
 
 ## Cómo se acotan loops y coste
 
-`.env.example` define `LLM_MAX_CALLS_PER_QUESTION` y
-`LLM_MAX_COST_USD_PER_QUESTION` como ceilings explícitos que el orquestador
-aplica. [TODO — completar con el mecanismo real: dónde se chequean estos
-ceilings, qué pasa al excederlos (¿`ERROR`? ¿degradación del bundle?), y con
-qué costo real por pregunta se validaron.]
+`.env.example` define `LLM_MAX_CALLS_PER_QUESTION` (default 5) y
+`LLM_MAX_COST_USD_PER_QUESTION` (default 0.50) como ceilings explícitos que
+`orchestration.orchestrator._check_ceilings` aplica en código, inmediatamente
+después de la llamada al intérprete y antes de resolver el plan — nunca
+dentro de la propia llamada LLM. Exceder cualquiera de los dos produce un
+`EvidenceBundle` con `status=ERROR` y la razón en `warnings` (nunca
+`refusal_reason`, reservado para `REFUSED`); el workflow correspondiente
+nunca llega a correr. El costo se suma solo sobre las llamadas con costo
+conocido — si `litellm.completion_cost` no pudo resolver el precio del
+modelo (ver el bug de `completion_cost` sin `model=` explícito en
+`NOTES.md`), esa llamada aporta `"unknown"` al total, no cero, y se declara
+explícitamente en `assumptions` ("model pricing unknown ... cost ceiling
+could not be fully enforced") en vez de fingir que el ceiling se aplicó
+completo. Con una sola llamada por pregunta (el Question Interpreter nunca
+hace más de una), el costo real por pregunta corrido contra Groq queda muy
+por debajo de ambos ceilings — el propósito de los ceilings en esta fase es
+la protección estructural, no un límite ajustado al costo observado.
 
 En la capa determinista, cada workflow es una secuencia fija de llamadas a
 tools, sin recursión ni selección abierta de próxima acción — no hay

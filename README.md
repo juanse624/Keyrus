@@ -8,9 +8,11 @@ alcanzan para responder (`ANSWER`), responder con reservas (`PARTIAL`),
 pedir aclaración (`NEEDS_CLARIFICATION`) o rechazar (`REFUSED`) — el modelo
 nunca participa en esa decisión.
 
-275 tests pasan. Los 8 evals deterministas pasan (8/8). Los ocho workflows
-analíticos del challenge tienen un status esperado (`ANSWER` / `PARTIAL` /
-`REFUSED` / `NEEDS_CLARIFICATION`) definido y verificado por esos evals.
+340 tests pasan. Los evals pasan 16/16 — 8 deterministas más 8 de la capa
+`--live`, verificada contra un proveedor real (ver `NOTES.md`). Los ocho
+workflows analíticos del challenge tienen un status esperado (`ANSWER` /
+`PARTIAL` / `REFUSED` / `NEEDS_CLARIFICATION`) definido y verificado por
+esos evals.
 
 > Ver [`ARCHITECTURE.md`](ARCHITECTURE.md) para el diseño completo y
 > [`NOTES.md`](NOTES.md) para el diario de desarrollo.
@@ -149,12 +151,16 @@ Copy-Item .env.example .env
 cp .env.example .env
 ```
 
-`.env` define `LLM_MODEL`, `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` (vía
-`litellm`) y dos ceilings — `LLM_MAX_CALLS_PER_QUESTION`,
-`LLM_MAX_COST_USD_PER_QUESTION` — que acotan el costo de la capa de
-orquestación LLM. `[TODO — confirmar si tests/evals/CLI siguen sin requerir
-estas variables una vez orchestration/ esté integrado, o si alguno de los
-tres ya las necesita.]`
+`.env` define `LLM_MODEL`, la credencial del proveedor correspondiente
+(`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` / `GROQ_API_KEY`,
+vía `litellm`), `LLM_MIN_CONFIDENCE`, y dos ceilings —
+`LLM_MAX_CALLS_PER_QUESTION`, `LLM_MAX_COST_USD_PER_QUESTION` — que acotan
+la capa de orquestación LLM. Ninguna de estas variables es requerida: `pytest
+-q` y `python -m evals.run_evals` (sin `--live`) corren completos sin
+`.env`; el CLI en modo JSON tampoco lo toca. Solo el modo texto libre del
+CLI y `--live` en los evals leen estas variables, y ambos degradan solo, sin
+fallar, cuando no hay credencial (ver "Comportamiento sin credencial" más
+abajo).
 
 ## Cómo correr
 
@@ -164,8 +170,8 @@ tres ya las necesita.]`
 pytest -q
 ```
 
-275 tests, corren en ~6 segundos, sin tocar `data/` (los fixtures escriben
-CSVs sintéticos en `tmp_path`).
+340 tests, corren en ~7 segundos, sin tocar `data/` (los fixtures escriben
+CSVs sintéticos en `tmp_path`) y sin requerir ninguna credencial LLM.
 
 **Evals** (el set determinista de las 8 preguntas analíticas del challenge):
 
@@ -173,14 +179,23 @@ CSVs sintéticos en `tmp_path`).
 python -m evals.run_evals
 ```
 
-Exit code no-cero si algo falla; el tier determinista pasa hoy
+Exit code no-cero si algo falla; el tier determinista pasa
 `deterministic tier: 8/8 case(s) passed`. Acepta `--live` para además correr
-las mismas 8 preguntas contra la capa de orquestación LLM. [TODO —
-actualizar con el resultado real de `--live` una vez orchestration/ esté
-implementado.]
+las mismas 8 preguntas en texto libre contra la capa de orquestación LLM
+real (`interpret_with_llm`), verificando ruteo de intent y disciplina de
+evidencia (`required_sources`, `forbidden_claims`):
 
-**CLI** — resuelve una pregunta estructurada (JSON) contra un intent y
-datos reales:
+```powershell
+python -m evals.run_evals --live
+```
+
+Sin credencial, el tier `--live` se reporta como `SKIP` razonado y nunca
+afecta el exit code — falta de configuración, no falla de comportamiento.
+Con credencial pasa `live tier: 8/8 case(s) passed`, para un total de 16/16
+entre ambos tiers.
+
+**CLI — modo JSON**, resuelve una pregunta estructurada contra un intent y
+datos reales, sin credencial:
 
 ```powershell
 python -m finance_assistant.cli examples/questions/q1_opex_q2_2024.json
@@ -189,34 +204,67 @@ python -m finance_assistant.cli examples/questions/q1_opex_q2_2024.json
 Solo 3 de las 8 preguntas tienen JSON de ejemplo en
 `examples/questions/`; ver Limitaciones conocidas.
 
-**UI**:
+**CLI — modo texto libre**, rutea la pregunta a través de
+`orchestration.orchestrator.answer_question`: hace una única llamada LLM si
+hay credencial, o cae al intérprete determinista por palabras clave si no
+la hay (mismo comportamiento en ambos casos, ver más abajo):
 
 ```powershell
-streamlit run src/finance_assistant/ui/app.py
+python -m finance_assistant.cli "What was our opex by cost centre in Q2 2024?"
 ```
 
-`[TODO — completar esta sección con el layout real de la UI una vez esté
-construida: qué se ve en pantalla, cómo se ingresa una pregunta, cómo se
-lee el status badge y el trace expandible.]`
+Con `--live`, `python -m evals.run_evals --live` y este modo de texto libre
+son las dos únicas vías que requieren credencial. Para correr con
+credencial real:
+
+```powershell
+Copy-Item .env.example .env   # completar LLM_MODEL + la API key del proveedor
+python -m finance_assistant.cli "What was our opex by cost centre in Q2 2024?" --model anthropic/claude-sonnet-4-5
+```
+
+`--model` es opcional y sobreescribe `LLM_MODEL` solo para esa corrida.
+
+**UI**: no construida — ver Limitaciones conocidas.
+
+## Comportamiento sin credencial
+
+Sin una API key configurada, las ocho preguntas analíticas se siguen
+respondiendo — esto es una propiedad del diseño, no un caso degradado.
+`orchestration.orchestrator.answer_question` detecta la ausencia de
+credencial (`Settings.has_credential`) y cae automáticamente a
+`interpret_with_keywords`, un intérprete determinista por palabras clave;
+la caída queda declarada explícitamente en `assumptions`
+(`"intent interpreted via keyword fallback..."`), nunca silenciosa. El
+`RunTrace` resultante tiene `model_calls: []` porque, correctamente, no se
+hizo ninguna llamada.
+
+Esto está cubierto por un test dedicado que corre las ocho preguntas sin
+ninguna credencial en el entorno y verifica que ninguna resuelva a `ERROR`:
+
+```powershell
+pytest tests/test_orchestration_orchestrator.py -k test_no_credential_falls_back_to_keyword_interpreter_and_answers_all_eight_questions -v
+```
 
 ## Estructura del proyecto
 
 ```
 src/finance_assistant/
-  tools/        10 funciones deterministas (dataclasses), una por regla R1-R8
-  workflows/    un plan fijo por cada una de las 8 preguntas analíticas
-  evidence/     EvidenceBundle (pydantic), Evidence Gate, renderer, trace
-  data/         loaders + validación de schema de los CSV de entrada
-  cli.py        CLI mínima: JSON de pregunta -> EvidenceBundle + trace
-  config.py     constantes de todo el proyecto (nunca hardcodeadas en tools/)
+  tools/          10 funciones deterministas (dataclasses), una por regla R1-R8
+  workflows/      un plan fijo por cada una de las 8 preguntas analíticas
+  evidence/       EvidenceBundle (pydantic), Evidence Gate, renderer, trace
+  orchestration/  Question Interpreter (LLM + fallback por keywords), plan
+                   registry, orquestador (interpretar -> acotar -> resolver -> correr)
+  data/           loaders + validación de schema de los CSV de entrada
+  cli.py          CLI: JSON de pregunta o texto libre -> EvidenceBundle + trace
+  config.py       constantes de todo el proyecto (nunca hardcodeadas en tools/)
 config/
   policy_rules.yaml   umbrales de la política T&E, citando su sección fuente
 data/            CSVs del challenge + documentos de política/contratos/memo
 docs/
   PROMPT_MAESTRO.md   reglas R1-R8, modelo de evidencia, las 8 preguntas
-evals/           evals/run_evals.py — set determinista de las 8 preguntas
+evals/           evals/run_evals.py — set determinista de las 8 preguntas + tier --live
 examples/questions/  3 JSON de pregunta de ejemplo para el CLI
-tests/           21 archivos de test, uno por tool/workflow/módulo de evidence
+tests/           27 archivos de test, uno por tool/workflow/módulo de evidence/orchestration
 traces/          salida de cada corrida (gitignored, salvo traces/samples/)
 traces/samples/  3 traces representativos committeados (ver más abajo)
 scripts/profile_data.py   profiler genérico de anomalías del dataset (Fase A)
@@ -247,15 +295,18 @@ cada categoría que `docs/PROMPT_MAESTRO.md` pide documentar:
 Todo trace comparte el mismo schema:
 `run_id, started_at, question, status, date_basis, steps[], model_calls[],
 final_evidence, duration_ms, estimated_cost_usd`. `model_calls` está vacío
-en los tres. [TODO — actualizar esta nota con cómo se puebla `model_calls`
-una vez orchestration/ esté implementado.]
+en los tres porque los 3 traces committeados vienen del CLI en modo JSON,
+que nunca pasa por el intérprete LLM. `orchestration.orchestrator.answer_question`
+sí puebla `model_calls` — un `ModelCall` por cada llamada real al LLM, con
+proveedor, modelo, tokens y costo estimado — cuando la pregunta se
+resuelve en modo texto libre con credencial; con el fallback por palabras
+clave se mantiene vacío, correctamente, porque no se hizo ninguna llamada.
 
 ## Limitaciones conocidas
 
-[TODO — cerrar esta sección al final. orchestration/ y la UI se están
-construyendo hoy; lo que se lista abajo son limitaciones que siguen siendo
-ciertas independientemente de esa capa.]
-
+- **No hay UI.** `docs/PROMPT_MAESTRO.md` sugiere una capa Streamlit sobre
+  el mismo `answer_question`; no se construyó. El CLI (modo JSON y modo
+  texto libre) es hoy la única interfaz.
 - **El CLI no puede pasar `DuplicateDetectionRules`.** Es un parámetro
   tipado que no tiene una forma JSON declarada; `duplicate_payment_check`
   siempre corre con sus valores por default (documentado en `cli.py`).
@@ -268,3 +319,6 @@ ciertas independientemente de esa capa.]
   fusionar automáticamente por similitud de nombre), pero es una limitación
   real para un ranking exacto de top-vendors cuando el clustering
   cambiaría el top-N.
+- **El Answer Renderer opcional no existe.** `evidence/render.py::render_bundle_text`
+  sigue siendo el único renderer; convertir un `EvidenceBundle` ya decidido
+  en prosa vía LLM queda fuera del alcance entregado (ver `ARCHITECTURE.md`).
