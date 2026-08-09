@@ -44,6 +44,23 @@ BOUNDARY_PRINCIPLE = (
     "at the financial-computation boundary."
 )
 
+# T&E policy review: the two states that answer "which transactions breach
+# policy". INSUFFICIENT_EVIDENCE is real information but not itself a
+# finding, so it's reported separately, never folded in with these.
+TE_ACTIONABLE_STATES = ("CONFIRMED_RULE_MATCH", "POTENTIAL_BREACH")
+# NOT_APPLICABLE/NOT_A_BREACH are coverage bookkeeping, not findings -- most
+# rule x transaction pairs simply don't apply. NOT_APPLICABLE in particular
+# dominates raw counts (rules x transactions, not breaches) and would swamp
+# any chart or metric it shares with actual findings.
+TE_COVERAGE_STATES = ("NOT_APPLICABLE", "NOT_A_BREACH")
+TE_STATE_LABELS = {
+    "CONFIRMED_RULE_MATCH": "Confirmed rule match",
+    "POTENTIAL_BREACH": "Potential breach",
+    "INSUFFICIENT_EVIDENCE": "Insufficient evidence",
+    "NOT_A_BREACH": "Not a breach",
+    "NOT_APPLICABLE": "Not applicable",
+}
+
 
 def _set_question(question: str) -> None:
     st.session_state["question"] = question
@@ -114,12 +131,75 @@ def render_top_vendors(result: dict) -> set[str]:
     return {"ranking_by_vendor_id", "ranking_by_alias_cluster"}
 
 
+def render_te_policy_review(result: dict) -> set[str]:
+    """CONFIRMED_RULE_MATCH/POTENTIAL_BREACH answer "which transactions
+    breach policy" and lead the view. INSUFFICIENT_EVIDENCE gets its own
+    metric -- valuable ("what couldn't be checked"), but not a finding.
+    NOT_APPLICABLE/NOT_A_BREACH are evaluation coverage (rules x
+    transactions that didn't apply, or applied and cleared) and go in an
+    expander so they never swamp the actionable numbers. See
+    workflows/policy.py."""
+    by_state: dict[str, int] = result.get("findings_by_state", {})
+    by_rule: dict[str, dict[str, int]] = result.get("findings_by_rule", {})
+
+    st.markdown("**Policy findings**")
+    cols = st.columns(2)
+    with cols[0]:
+        st.metric(TE_STATE_LABELS["CONFIRMED_RULE_MATCH"], f"{by_state.get('CONFIRMED_RULE_MATCH', 0):,}")
+    with cols[1]:
+        st.metric(TE_STATE_LABELS["POTENTIAL_BREACH"], f"{by_state.get('POTENTIAL_BREACH', 0):,}")
+
+    st.metric(
+        "Could not be evaluated (insufficient evidence)",
+        f"{by_state.get('INSUFFICIENT_EVIDENCE', 0):,}",
+    )
+
+    chart_data = {
+        TE_STATE_LABELS[state]: by_state[state]
+        for state in (*TE_ACTIONABLE_STATES, "INSUFFICIENT_EVIDENCE")
+        if by_state.get(state, 0) > 0
+    }
+    if chart_data:
+        st.bar_chart(pd.Series(chart_data, name="count"))
+
+    rule_rows = [
+        {
+            "rule": rule_id.replace("_", " ").capitalize(),
+            TE_STATE_LABELS["CONFIRMED_RULE_MATCH"]: states.get("CONFIRMED_RULE_MATCH", 0),
+            TE_STATE_LABELS["POTENTIAL_BREACH"]: states.get("POTENTIAL_BREACH", 0),
+        }
+        for rule_id, states in sorted(by_rule.items())
+        if states.get("CONFIRMED_RULE_MATCH", 0) or states.get("POTENTIAL_BREACH", 0)
+    ]
+    if rule_rows:
+        st.markdown("**Confirmed findings by rule**")
+        st.dataframe(pd.DataFrame(rule_rows), hide_index=True, use_container_width=True)
+
+    with st.expander("Evaluation coverage (not findings)"):
+        st.caption(
+            "Total evaluations = rules x transactions, not a breach count -- "
+            "most rule/transaction pairs simply don't apply (e.g. a lodging "
+            "cap rule evaluated against a non-lodging expense)."
+        )
+        coverage_rows = [
+            {"state": TE_STATE_LABELS[state], "count": by_state[state]}
+            for state in TE_COVERAGE_STATES
+            if state in by_state
+        ]
+        if coverage_rows:
+            st.dataframe(pd.DataFrame(coverage_rows), hide_index=True, use_container_width=True)
+
+    return {"findings_by_state", "findings_by_rule"}
+
+
 def render_result(result: dict, intent: Intent) -> None:
     shown: set[str] = set()
     if intent == Intent.TRAVEL_COMPARISON and "reported_basis" in result:
         shown = render_travel_comparison(result)
     elif intent == Intent.TOP_VENDORS and "ranking_by_vendor_id" in result:
         shown = render_top_vendors(result)
+    elif intent == Intent.TE_POLICY_CHECK and "findings_by_state" in result:
+        shown = render_te_policy_review(result)
 
     remaining = {k: v for k, v in result.items() if k not in shown}
     if not remaining:
