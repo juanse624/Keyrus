@@ -1,26 +1,21 @@
 # NOTES
 
-Notas de desarrollo en primera persona. Sin adornos, sin convertir lo que
-pasó en anécdotas — esto es lo que ocurrió durante esta sesión de trabajo.
+Notas de desarrollo en primera persona, sin adornos: esto es lo que ocurrió.
 
 ## Herramientas de IA usadas
 
 Claude Code para la implementación, con revisión de cada plan antes de
-ejecutarlo. Un asistente aparte para el análisis del dataset, la revisión de
-planes y la verificación cruzada de cifras (ver "Verificación cruzada
-independiente" más abajo).
+ejecutarlo. Un asistente aparte para el análisis del dataset, revisión de
+planes y verificación cruzada de cifras (ver más abajo).
 
 ## Algo que la IA hizo particularmente bien
 
 Detectar que el sentinel `9999-12-31` de vigencia en el chart of accounts
-revienta `pd.to_datetime` — Timestamp de pandas tiene rango de nanosegundos y
-ese año está fuera de rango — y verificarlo corriendo código antes de
-escribir la implementación, en vez de asumir que `pd.to_datetime` lo iba a
-aceptar sin más. Está documentado en el propio código:
-`src/finance_assistant/tools/accounts.py:135`. Si no se hubiera chequeado
-antes de codear, el bug habría aparecido más tarde — probablemente como un
-`OutOfBoundsDatetime` silencioso en un caso límite — y habría costado más
-tiempo encontrarlo que evitarlo.
+revienta `pd.to_datetime` (rango de nanosegundos de pandas), y verificarlo
+corriendo código antes de escribir la implementación en vez de asumirlo
+(`tools/accounts.py:135`). Sin ese chequeo previo, el bug habría aparecido
+después como un `OutOfBoundsDatetime` silencioso en un caso límite, más
+caro de encontrar que de evitar.
 
 ## Algo que hizo mal y cómo lo detecté
 
@@ -87,109 +82,46 @@ instrucción que yo había dado. En concreto, releer la política y el memo
 directamente en vez de fiarme del resumen, y validar cada decisión de plan
 contra lo que el challenge pide literalmente.
 
-**4. Verificación cruzada independiente.** Los hallazgos de Fase A
-(desfase posting/accrual, el hueco de FX, la doble vigencia del COA, las
-claves repetidas de budget — ver apéndice) se calcularon por dos vías
-independientes: el profiler del proyecto (`scripts/profile_data.py`) y un
-análisis externo hecho aparte. Los números coincidieron exactamente,
-incluidos los importes al céntimo. Cuando no coincidieron — el profiler
-reportó 114 filas cruzando año calendario y el análisis externo 60 — la
-discrepancia resultó ser una diferencia de definición (todas las cruces de
-año frente a solo las del último ejercicio fiscal), no un error; el
-desglose por par de años lo resolvió.
+### Otras dos verificaciones que valieron la pena
 
-Ese mismo hábito de cuestionar un número que no cuadraba con una expectativa
-calculada por fuera fue lo que destapó un bug real: la asunción de "año por
-defecto" (cuando una pregunta no especifica año) se filtraba dentro de
-bundles `NEEDS_CLARIFICATION` en los que, por definición, no se había
-aplicado ningún default — en dos módulos distintos. Los tests que existían
-en ese momento no lo cazaban.
-
-**5. El mock validaba mi contrato, no el del proveedor.** Toda la capa de
-orquestación (`orchestration/`) se construyó y testeó contra un cliente LLM
-simulado — `fake_llm_client` en los tests, nunca una llamada real. Los 340
-tests pasaban, incluidos los de `interpreter.py` y `orchestrator.py`. La
-primera vez que se corrió contra un proveedor real (Groq, `groq/llama-3.3-70b-versatile`)
-aparecieron dos bugs que ningún test cazaba, porque ningún test tocaba la
-superficie donde vivían.
-
-El primero: `litellm.completion_cost()` se llamaba sin `model=` explícito.
-`response.model` — lo que el objeto de respuesta trae de vuelta — es el
-nombre crudo del modelo tal como lo devuelve el proveedor, sin el prefijo
-(`"groq/..."`) que la tabla de precios de litellm necesita para resolverlo.
-La resolución fallaba, la excepción se tragaba (`except Exception: cost =
-"unknown"`), y el costo quedaba siempre en `"unknown"` — no un valor
-incorrecto, simplemente nunca el real. Se corrigió pasando `model=` de
-forma explícita a `completion_cost()` en vez de dejar que dependiera del
-eco del proveedor (`interpreter.py:126-133`).
-
-El segundo, más grave: la validación de esquema de tool-calling de Groq
-rechaza la llamada de plano cuando el modelo omite del JSON un campo
-opcional con valor nulo, aun cuando el schema de Pydantic lo declara
-nullable — un `litellm.BadRequestError` en tiempo de llamada, no un error
-de parseo después. Esto rompía 3 de las 8 preguntas, que volvían como
-`UNKNOWN` con `status=ERROR` en vez de resolver el intent real. Se
-resolvió con un reintento explícito: al capturar ese `BadRequestError`
-puntual, la segunda llamada pide JSON plano (`response_format={"type":
-"json_object"}`) con el schema escrito en el prompt en vez de impuesto
-server-side — `IntentRequest` ya tolera campos opcionales ausentes al
-parsear, así que el reintento degrada con gracia en vez de propagar el
-fallo (`interpreter.py:106-123`).
-
-La lección, escrita sin dramatismo: el cliente simulado validaba mi propio
-contrato, no el del proveedor. Un mock confirma que el código hace lo que
-yo creo que debe hacer; no confirma que el mundo se comporte como yo creo.
-Por eso conseguí una credencial real en vez de dar la capa por verificada
-con 340 tests en verde.
+Los hallazgos de Fase A se calcularon por dos vías independientes (el
+profiler del proyecto y un análisis externo) y coincidieron al céntimo; la
+única discrepancia resultó ser de definición, no un error. Y toda la capa
+de orquestación se testeó contra un LLM simulado (340 tests en verde) hasta
+que la primera corrida contra Groq real destapó dos bugs que ningún mock
+cazaba (`interpreter.py:106-133`) — el mock validaba mi propio contrato, no
+el del proveedor.
 
 ## Qué recorté
 
-`canonical_vendor_id` / merge real de vendors. `detect_alias_clusters`
-(`tools/vendors.py`) detecta candidatos de fusión por normalización mecánica
-del nombre, pero nunca los resuelve a un mapeo canónico — eso es correcto
-según R6 (nunca fusionar por similitud de nombre sin un mapeo autoritativo),
-pero además es, explícitamente, funcionalidad que quedó fuera del alcance
-entregado: no existe ningún flujo — humano o automático — para promover un
-cluster candidato a una identidad de vendor consolidada.
-
-La UI de Streamlit tampoco se construyó — `docs/PROMPT_MAESTRO.md` la
-sugiere como capa opcional sobre `answer_question`, y el CLI (modo JSON y
-modo texto libre) quedó como la única interfaz entregada. El Answer
-Renderer opcional (prosa desde un `EvidenceBundle` ya decidido, vía LLM)
-tampoco se implementó; `render_bundle_text` sigue siendo el único
-renderer, y es determinista.
+`canonical_vendor_id` / merge real de vendors: `detect_alias_clusters`
+detecta candidatos por normalización mecánica de nombre pero nunca los
+resuelve a un mapeo canónico (correcto según R6, pero fuera de alcance). El
+Answer Renderer opcional (prosa desde un `EvidenceBundle` ya decidido, vía
+LLM) tampoco se implementó; `render_bundle_text` sigue siendo el único
+renderer, determinista.
 
 ## Tiempo invertido
 
-Día y medio, aproximadamente 10-12 horas. Consistente con los timestamps de
-los commits: el primero el 2026-08-07 a las 17:53, el último el 2026-08-08 a
-las 19:30.
+El historial de commits va de 2026-08-07 17:53 a 2026-08-09 02:48 (`git
+log --reverse`). Dos jornadas reales: una sesión corta la noche del 7
+(scaffolding) y el grueso del trabajo el 8 de agosto, extendido hasta la
+madrugada del 9. Los commits son checkpoints, no tiempo continuo, así que
+no traduzco ese rango a una cifra de horas activas — pero el orden de
+magnitud correcto es dos jornadas completas.
 
 ## Con dos días más
 
-Cinco direcciones, en orden de lo que reduciría más riesgo primero:
-
-Medir coste real por tool y por llamada a modelo, con presupuesto de costo
-por pregunta, no solo el techo de número de llamadas que ya existe
-(`LLM_MAX_COST_USD_PER_QUESTION` acota el total, pero no distingue qué
-componente de una pregunta compuesta se lo está comiendo). Un catálogo
-semántico versionado para las convenciones no escritas del dominio — base
-de devengo, perímetros de opex, reglas de restatement de cost-centre — en
-vez de la configuración dispersa entre `config.py`, `config/policy_rules.yaml`
-y los defaults de cada workflow que existe hoy. Ampliar el eval set más
-allá de las ocho preguntas del challenge: casos adversariales que intenten
-inducir una respuesta segura donde no la hay, y un dataset sintético con
-anomalías distintas — no las mismas 894/114/228/864 filas de este dataset —
-para confirmar que la detección de R1-R7 es genérica de verdad y no quedó
-calibrada, sin darme cuenta, a las particularidades de este fixture.
-Resolución de identidad de proveedor con un maestro canónico y un proceso
-de aprobación humana explícito, en vez de dejar `detect_alias_clusters`
-como el techo funcional (ver "Qué recorté"). Y observabilidad sobre la
-distribución de estados (`ANSWER`/`PARTIAL`/`REFUSED`/`NEEDS_CLARIFICATION`)
-a lo largo del tiempo, para detectar si el sistema empieza a rechazar más o
-menos de lo esperado — la clase de señal que ni un test ni un eval
-puntual puede dar, porque depende de la distribución real de preguntas que
-llegan, no de un caso fijo.
+En orden de lo que reduciría más riesgo primero: coste real por tool y por
+llamada a modelo, no solo el techo agregado que ya existe; un catálogo
+semántico versionado para las convenciones no escritas del dominio (base
+de devengo, perímetros de opex, restatement de cost-centre), hoy dispersas
+entre `config.py` y `config/policy_rules.yaml`; ampliar el eval set con
+casos adversariales y un dataset sintético con anomalías distintas a las
+de este fixture, para confirmar que R1-R7 generalizan; resolución de
+identidad de proveedor con maestro canónico y aprobación humana; y
+observabilidad sobre la distribución de estados en el tiempo, la señal que
+ni un test ni un eval puntual puede dar.
 
 ---
 
