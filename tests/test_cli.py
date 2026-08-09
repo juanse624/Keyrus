@@ -190,3 +190,35 @@ def test_cli_two_runs_do_not_overwrite_each_others_trace(tmp_path, write_csv, wr
     main([str(question_file), "--data-dir", str(tmp_path), "--traces-dir", str(traces_dir)])
 
     assert len(list(traces_dir.glob("*.json"))) == 2
+
+
+def test_cli_free_text_mode_uses_keyword_fallback_without_credential(tmp_path, write_csv, write_markdown, capsys, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    _write_dataset(write_csv, write_markdown)
+    traces_dir = tmp_path / "traces"
+
+    exit_code = main(["What was our opex by cost centre in Q2?", "--data-dir", str(tmp_path), "--traces-dir", str(traces_dir)])
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "intent: opex_by_cost_centre" in out
+    assert "keyword fallback" in out
+
+    trace_data = json.loads(next(traces_dir.glob("*.json")).read_text(encoding="utf-8"))
+    assert trace_data["model_calls"] == []
+
+
+def test_cli_free_text_containing_json_substring_is_not_misrouted_to_json_mode(tmp_path, write_csv, write_markdown, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    _write_dataset(write_csv, write_markdown)
+    traces_dir = tmp_path / "traces"
+
+    # Contains the substring "json" but does not end in ".json" -- must
+    # still be routed to free-text mode, not misread as a JSON file path.
+    exit_code = main(["is our json export of opex by cost centre correct?", "--data-dir", str(tmp_path), "--traces-dir", str(traces_dir)])
+
+    assert exit_code in (0, 1)
+    assert len(list(traces_dir.glob("*.json"))) == 1

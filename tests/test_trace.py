@@ -8,15 +8,17 @@ isolation from any dataset.
 import json
 from datetime import datetime, timezone
 
+import pytest
+
 from finance_assistant.evidence.models import (
     AnswerStatus,
     CalcStep,
     Coverage,
     EvidenceBundle,
-    Intent,
     ToolCall,
 )
-from finance_assistant.evidence.trace import build_trace, write_trace
+from finance_assistant.evidence.trace import ModelCall, build_trace, write_trace
+from finance_assistant.orchestration.intents import Intent
 
 _STARTED_AT = datetime(2024, 7, 1, 12, 0, 0, tzinfo=timezone.utc)
 _COVERAGE = Coverage(selected_rows=10, computable_rows=10, computable_amount_pct=100.0)
@@ -95,12 +97,49 @@ def test_final_evidence_is_full_bundle_untouched():
     assert len(trace.final_evidence["calculations"][0]["output"]) == 20
 
 
-def test_model_calls_always_empty_and_cost_is_a_zero_float_not_unknown():
+def test_model_calls_default_to_empty_and_cost_is_a_zero_float_not_unknown():
     trace = build_trace(question="q", bundle=_bundle(), started_at=_STARTED_AT, duration_ms=10, date_basis="accrual_date")
 
     assert trace.model_calls == []
     assert trace.estimated_cost_usd == 0.0
     assert isinstance(trace.estimated_cost_usd, float)
+
+
+def _model_call(**overrides) -> ModelCall:
+    fields = {
+        "provider": "anthropic",
+        "model": "anthropic/claude-sonnet-4-5",
+        "prompt_tokens": 100,
+        "completion_tokens": 20,
+        "estimated_cost_usd": 0.01,
+        "latency_ms": 250,
+    }
+    fields.update(overrides)
+    return ModelCall(**fields)
+
+
+def test_build_trace_populates_model_calls_and_sums_known_cost():
+    calls = [_model_call(estimated_cost_usd=0.01), _model_call(estimated_cost_usd=0.02)]
+
+    trace = build_trace(question="q", bundle=_bundle(), started_at=_STARTED_AT, duration_ms=10, date_basis="accrual_date", model_calls=calls)
+
+    assert trace.model_calls == calls
+    assert trace.estimated_cost_usd == pytest.approx(0.03)
+
+
+def test_build_trace_cost_is_unknown_if_any_call_cost_is_unknown():
+    calls = [_model_call(estimated_cost_usd=0.01), _model_call(estimated_cost_usd="unknown")]
+
+    trace = build_trace(question="q", bundle=_bundle(), started_at=_STARTED_AT, duration_ms=10, date_basis="accrual_date", model_calls=calls)
+
+    assert trace.estimated_cost_usd == "unknown"
+
+
+def test_build_trace_model_calls_none_matches_omitted_default():
+    trace = build_trace(question="q", bundle=_bundle(), started_at=_STARTED_AT, duration_ms=10, date_basis="accrual_date", model_calls=None)
+
+    assert trace.model_calls == []
+    assert trace.estimated_cost_usd == 0.0
 
 
 def test_status_and_date_basis_round_trip_from_bundle_and_caller():
