@@ -103,12 +103,15 @@ renderer, determinista.
 
 ## Tiempo invertido
 
-El historial de commits va de 2026-08-07 17:53 a 2026-08-09 02:48 (`git
-log --reverse`). Dos jornadas reales: una sesión corta la noche del 7
-(scaffolding) y el grueso del trabajo el 8 de agosto, extendido hasta la
-madrugada del 9. Los commits son checkpoints, no tiempo continuo, así que
-no traduzco ese rango a una cifra de horas activas — pero el orden de
-magnitud correcto es dos jornadas completas.
+El historial de commits va de 2026-08-07 17:53 a 2026-08-09 17:49 (`git
+log --reverse` / `git log`): 47 h 56 min entre el primer y el último
+commit. Dos jornadas reales: una sesión corta la noche del 7
+(scaffolding) y el grueso del trabajo el 8 y 9 de agosto, cada tramo
+separado del anterior por una pausa de sueño de 9-10 horas visible en el
+propio historial. Los commits son checkpoints, no tiempo continuo, así
+que esas ~48 h son el rango del historial, no horas activas trabajadas —
+pero la cifra real, y el número de jornadas, quedan fijados por ese
+rango: dos.
 
 ## Con dos días más
 
