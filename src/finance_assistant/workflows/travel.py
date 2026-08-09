@@ -24,9 +24,9 @@ from finance_assistant.evidence.models import (
     CalcStep,
     Coverage,
     EvidenceBundle,
-    Intent,
     SourceRef,
 )
+from finance_assistant.orchestration.intents import Intent
 from finance_assistant.tools.accounts import resolve_account_hierarchy
 from finance_assistant.tools.documents import search_documents
 from finance_assistant.tools.fx import aggregate_usd, convert_to_usd

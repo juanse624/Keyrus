@@ -10,12 +10,14 @@ only applies when building `steps[]`, since a step must "fit on screen"
 while the bundle already keeps its own contents at aggregate, non-row-level
 granularity.
 
-`model_calls` stays empty in this phase (no LLM yet); the structure exists
-so a later phase only has to populate it, never redesign it. Per-step
-`duration_ms` for a "tool" step is the real wall-clock time `ToolTrace`
-measured around that call; for a "calc" step it stays 0 -- `CalcStep`
-arithmetic is inline Python with no timer, matching the master prompt's own
-example.
+`model_calls` is populated by `orchestration.orchestrator.answer_question`
+when a question went through the LLM interpreter (or stays empty when the
+keyword fallback answered it instead); JSON-mode CLI callers never pass it,
+so their trace keeps the original `model_calls=[]`, `estimated_cost_usd=0.0`
+shape unchanged. Per-step `duration_ms` for a "tool" step is the real
+wall-clock time `ToolTrace` measured around that call; for a "calc" step it
+stays 0 -- `CalcStep` arithmetic is inline Python with no timer, matching
+the master prompt's own example.
 """
 
 import json
@@ -26,7 +28,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from finance_assistant.evidence.models import AnswerStatus, EvidenceBundle, Intent
+from finance_assistant.evidence.models import AnswerStatus, EvidenceBundle
+from finance_assistant.orchestration.intents import Intent
 from finance_assistant.evidence.summarize import summarize_for_trace
 
 
@@ -99,6 +102,14 @@ def _make_run_id(started_at: datetime, intent: Intent) -> str:
     return f"{started_at.strftime('%Y%m%dT%H%M%SZ')}_{intent.value}_{uuid4().hex[:8]}"
 
 
+def _total_estimated_cost(model_calls: list[ModelCall]) -> float | Literal["unknown"]:
+    if not model_calls:
+        return 0.0
+    if any(call.estimated_cost_usd == "unknown" for call in model_calls):
+        return "unknown"
+    return sum(call.estimated_cost_usd for call in model_calls)  # type: ignore[misc]
+
+
 def build_trace(
     *,
     question: str,
@@ -106,7 +117,9 @@ def build_trace(
     started_at: datetime,
     duration_ms: int,
     date_basis: str,
+    model_calls: list[ModelCall] | None = None,
 ) -> RunTrace:
+    calls = model_calls or []
     return RunTrace(
         run_id=_make_run_id(started_at, bundle.intent),
         started_at=started_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -114,10 +127,10 @@ def build_trace(
         status=bundle.status,
         date_basis=date_basis,
         steps=_build_steps(bundle),
-        model_calls=[],
+        model_calls=calls,
         final_evidence=bundle.model_dump(mode="json"),
         duration_ms=duration_ms,
-        estimated_cost_usd=0.0,
+        estimated_cost_usd=_total_estimated_cost(calls),
     )
 
 

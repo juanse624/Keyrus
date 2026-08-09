@@ -16,10 +16,10 @@ from finance_assistant.evidence.models import (
     AnswerStatus,
     Coverage,
     EvidenceBundle,
-    Intent,
     MissingEvidence,
     MissingEvidenceReasonCode,
 )
+from finance_assistant.orchestration.intents import Intent
 from finance_assistant.tools.duplicates import DuplicateDetectionRules, detect_duplicate_candidates
 from finance_assistant.tools.ledger import query_ledger
 from finance_assistant.tools.vendors import detect_alias_clusters

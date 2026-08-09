@@ -12,7 +12,8 @@ import pandas as pd
 
 from finance_assistant.config import DEFAULT_FINANCIAL_DATE_FIELD
 from finance_assistant.evidence.gate import apply_gate
-from finance_assistant.evidence.models import AnswerStatus, Coverage, EvidenceBundle, Intent
+from finance_assistant.evidence.models import AnswerStatus, Coverage, EvidenceBundle
+from finance_assistant.orchestration.intents import Intent
 from finance_assistant.tools.fx import aggregate_usd, aggregate_usd_by, convert_to_usd
 from finance_assistant.tools.ledger import query_ledger
 from finance_assistant.tools.vendors import detect_alias_clusters, normalize_vendor_name, vendor_lookup

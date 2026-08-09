@@ -17,10 +17,10 @@ from finance_assistant.evidence.models import (
     AnswerStatus,
     Coverage,
     EvidenceBundle,
-    Intent,
     MissingEvidence,
     MissingEvidenceReasonCode,
 )
+from finance_assistant.orchestration.intents import Intent
 from finance_assistant.tools.accounts import resolve_account_hierarchy
 from finance_assistant.tools.cost_centres import normalize_reporting_cost_centre
 from finance_assistant.tools.fx import aggregate_usd, aggregate_usd_by, convert_to_usd

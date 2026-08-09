@@ -7,12 +7,15 @@ parameters via evals/cases.py, resolves `conditional` cases' branch via
 evals/preconditions.py, calls the workflow directly, and asserts the
 result. Exit code is non-zero if any deterministic case fails.
 
-Live tier (`--live`): would route each case's natural-language `question`
-through finance_assistant.orchestration.orchestrator once that package
-exists. It doesn't yet (a later commit), so every live case is reported as
-a clear, reasoned SKIP. Skipping never changes the exit code — missing
-orchestration or a missing LLM credential is a configuration gap, not a
-behavioral failure.
+Live tier (`--live`): routes each case's natural-language `question`
+through finance_assistant.orchestration.orchestrator.answer_question,
+checking intent routing and evidence discipline (required_sources,
+forbidden_claims) -- not the full expected_status/expected_key_facts
+table, which stays the deterministic tier's job. With no LLM credential
+available, every live case is reported as a clear, reasoned SKIP instead,
+and skipping never changes the exit code — a missing credential is a
+configuration gap, not a behavioral failure. Once the tier actually runs,
+though, a genuine misroute or failure does affect the exit code.
 """
 
 import argparse
@@ -38,8 +41,9 @@ try:
     import yaml
 
     from finance_assistant import config
-    from finance_assistant.evidence.models import AnswerStatus, Intent
+    from finance_assistant.evidence.models import AnswerStatus
     from finance_assistant.evidence.render import render_bundle_text
+    from finance_assistant.orchestration.intents import Intent
 
     from evals.cases import CASES
     from evals.dataset import load_dataset
@@ -243,14 +247,63 @@ def _run_deterministic(questions: list[dict]) -> bool:
     return all(results)
 
 
-def _run_live(questions: list[dict]) -> None:
+def _run_live_case(case: dict, answer_question, settings) -> bool:
+    case_id = case["id"]
+    expected_intent = Intent[case["expected_intent"]]
+    bundle, _trace = answer_question(case["question"], model=settings.llm_model)
+
+    checks: list[tuple[bool, str]] = [
+        (bundle.intent == expected_intent, f"intent: expected {expected_intent.name}, got {bundle.intent.name}"),
+        (
+            bundle.status != AnswerStatus.ERROR,
+            f"status: {bundle.status.name} (ERROR means the orchestration layer itself failed, see bundle.warnings)",
+        ),
+        _check_required_sources(bundle, case.get("required_sources", [])),
+        _check_forbidden_claims(bundle, case.get("forbidden_claims", [])),
+    ]
+    case_passed = all(passed for passed, _ in checks)
+    print(f"[{case_id}] {'PASS' if case_passed else 'FAIL'}")
+    for passed, message in checks:
+        mark = "  ok" if passed else "FAIL"
+        print(f"[{case_id}]   [{mark}] {message}")
+    return case_passed
+
+
+def _run_live(questions: list[dict]) -> bool | None:
+    """Returns None when skipped (a configuration gap -- never affects the
+    process exit code), or True/False when it actually ran (a real
+    behavioral result). Deliberately does NOT re-check expected_status/
+    expected_key_facts/preconditions -- those are the deterministic tier's
+    job and require dataset facts recomputed independently. The live
+    tier's job is validating the orchestration layer specifically: did the
+    interpreter route to the right intent, and does the resulting bundle
+    still respect the evidence discipline (required_sources,
+    forbidden_claims), regardless of which gate branch fired."""
     try:
-        import finance_assistant.orchestration.orchestrator  # noqa: F401
+        from finance_assistant.orchestration.orchestrator import answer_question
+        from finance_assistant.orchestration.settings import load_settings
     except ImportError:
         print(f"live tier: {len(questions)} case(s) skipped — orchestration/ not implemented yet")
-        return
+        return None
 
-    print(f"live tier: {len(questions)} case(s) skipped — live orchestration runner not yet implemented")
+    settings = load_settings()
+    if not settings.has_credential():
+        print(
+            f"live tier: {len(questions)} case(s) skipped — no credential for {settings.llm_model} "
+            f"(set {settings.credential_env_var()} to enable)"
+        )
+        return None
+
+    print(f"[live tier] {len(questions)} case(s) — model {settings.llm_model}")
+    print()
+    results = []
+    for case in questions:
+        results.append(_run_live_case(case, answer_question, settings))
+        print()
+
+    passed = sum(results)
+    print(f"live tier: {passed}/{len(results)} case(s) passed")
+    return all(results)
 
 
 def main() -> int:
@@ -262,11 +315,13 @@ def main() -> int:
 
     deterministic_ok = _run_deterministic(questions)
 
+    live_ok = None
     if args.live:
         print()
-        _run_live(questions)
+        live_ok = _run_live(questions)
 
-    return 0 if deterministic_ok else 1
+    overall_ok = deterministic_ok and live_ok is not False
+    return 0 if overall_ok else 1
 
 
 if __name__ == "__main__":

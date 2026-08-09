@@ -24,6 +24,7 @@ from finance_assistant.data.loaders import (
     load_gl_transactions,
     load_vendors,
 )
+from finance_assistant.orchestration import plans
 
 
 @dataclass(frozen=True)
@@ -38,32 +39,40 @@ class Dataset:
     def two_most_recent_years(self, date_field: str = DEFAULT_FINANCIAL_DATE_FIELD) -> tuple[int, int]:
         """(current, prior) = the two most recent distinct years present in
         gl[date_field], descending. Used by Q2 (travel_comparison) instead
-        of a literal year pair."""
-        years = sorted({int(y) for y in self.gl[date_field].dropna().dt.year.unique()}, reverse=True)
-        if len(years) < 2:
+        of a literal year pair. Delegates to
+        orchestration.plans.default_two_most_recent_years -- the same
+        derivation the live orchestrator path uses -- but raises loudly
+        instead of silently returning {}, since the eval harness has no
+        downstream "missing required parameter" error to surface this."""
+        result = plans.default_two_most_recent_years(self.gl, date_field)
+        if not result:
+            years = sorted({int(y) for y in self.gl[date_field].dropna().dt.year.unique()}, reverse=True)
             raise ValueError(f"need at least 2 distinct years in gl['{date_field}'] to compare, found {years}")
-        return years[0], years[1]
+        return result["year_current"], result["year_prior"]
 
     def budget_year(self) -> int:
         """The single year budget.csv's period_month values cover (R5:
         budget covers exactly one year). Used by Q5 (budget_variance)
-        instead of a literal year."""
-        years = sorted({str(pm)[:4] for pm in self.budget["period_month"].dropna().unique()})
-        if not years:
-            raise ValueError("budget.csv has no period_month values")
-        if len(years) > 1:
+        instead of a literal year. Delegates to
+        orchestration.plans.default_budget_year."""
+        result = plans.default_budget_year(self.budget)
+        if not result:
+            years = sorted({str(pm)[:4] for pm in self.budget["period_month"].dropna().unique()})
+            if not years:
+                raise ValueError("budget.csv has no period_month values")
             # R5 assumes one year; if a conforming dataset violates that,
             # surface it loudly rather than silently picking one.
             raise ValueError(f"budget.csv covers more than one year: {years}")
-        return int(years[0])
+        return result["year"]
 
     def full_date_range(self, date_field: str = DEFAULT_FINANCIAL_DATE_FIELD) -> tuple[pd.Timestamp, pd.Timestamp]:
         """(start, end) = the min/max of gl[date_field]. Used by Q4/Q6/Q8,
-        whose literal question wording doesn't name a period."""
-        series = self.gl[date_field].dropna()
-        if series.empty:
+        whose literal question wording doesn't name a period. Delegates to
+        orchestration.plans.default_full_date_range."""
+        result = plans.default_full_date_range(self.gl, date_field)
+        if not result:
             raise ValueError(f"gl['{date_field}'] has no non-null values")
-        return series.min(), series.max()
+        return pd.Timestamp(result["date_start"]), pd.Timestamp(result["date_end"])
 
 
 def load_dataset() -> Dataset:

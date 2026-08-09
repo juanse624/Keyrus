@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field, model_validator
 
+from finance_assistant.orchestration.intents import Intent
+
 if TYPE_CHECKING:
     from finance_assistant.tools.documents import DocumentMatch
     from finance_assistant.tools.fx import FxCoverage
@@ -29,22 +31,6 @@ class AnswerStatus(str, Enum):
     REFUSED = "refused"
     NEEDS_CLARIFICATION = "needs_clarification"
     ERROR = "error"
-
-
-# TEMPORARY: orchestration/ does not exist yet (this phase builds evidence/
-# only). This enum belongs in orchestration/intents.py once that package is
-# built — it lives here only so EvidenceBundle has a concrete Intent type
-# today. Move, do not duplicate, when orchestration/ lands.
-class Intent(str, Enum):
-    OPEX_BY_COST_CENTRE = "opex_by_cost_centre"  # Q1 -> workflows/opex.py
-    TRAVEL_COMPARISON = "travel_comparison"  # Q2 -> workflows/travel.py
-    CONSOLIDATED_SPEND = "consolidated_spend"  # Q3 -> workflows/consolidated.py
-    TOP_VENDORS = "top_vendors"  # Q4 -> workflows/vendors.py
-    BUDGET_VARIANCE = "budget_variance"  # Q5 -> workflows/variance.py
-    TE_POLICY_CHECK = "te_policy_check"  # Q6 -> workflows/policy.py
-    HEADCOUNT_COST_PER_FTE = "headcount_cost_per_fte"  # Q7 -> workflows/headcount.py
-    DUPLICATE_PAYMENT_CHECK = "duplicate_payment_check"  # Q8 -> workflows/duplicates.py
-    UNKNOWN = "unknown"
 
 
 class Coverage(BaseModel):

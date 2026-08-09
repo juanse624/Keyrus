@@ -19,10 +19,10 @@ from finance_assistant.evidence.models import (
     CalcStep,
     Coverage,
     EvidenceBundle,
-    Intent,
     MissingEvidence,
     MissingEvidenceReasonCode,
 )
+from finance_assistant.orchestration.intents import Intent
 from finance_assistant.tools.fx import aggregate_usd, aggregate_usd_by, convert_to_usd
 from finance_assistant.tools.ledger import query_ledger
 from finance_assistant.workflows._shared import ToolTrace, quarter_bounds, resolve_year_or_readings

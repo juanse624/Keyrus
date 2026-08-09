@@ -22,11 +22,11 @@ from finance_assistant.evidence.models import (
     AnswerStatus,
     Coverage,
     EvidenceBundle,
-    Intent,
     MissingEvidence,
     MissingEvidenceReasonCode,
     SourceRef,
 )
+from finance_assistant.orchestration.intents import Intent
 from finance_assistant.tools.accounts import resolve_account_hierarchy
 from finance_assistant.tools.budget import query_budget
 from finance_assistant.tools.cost_centres import normalize_reporting_cost_centre

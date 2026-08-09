@@ -46,11 +46,21 @@ aritmética ni evidencia:
    decidido en prosa. Recibe el bundle completo, no puede agregar hechos ni
    cambiar el `status`.
 
-**Estado de esta capa**: [TODO — completar con el Question Interpreter y el
-Answer Renderer reales de `orchestration/`: qué resuelve cada uno, cómo se
-relacionan con el CLI existente, y si `evidence/render.py::render_bundle_text`
-sigue siendo el fallback determinista sin LLM o pasa a ser el único
-renderer en ciertos casos.]
+**Estado de esta capa**: el Question Interpreter está construido
+(`orchestration/{intents,interpreter,plans,orchestrator}.py`, Fase H).
+`orchestration.interpreter.interpret_with_llm` hace la única llamada al
+LLM, con salida estructurada `IntentRequest` vía litellm; sin credencial
+disponible, `orchestration.orchestrator.answer_question` cae
+automáticamente a `interpret_with_keywords` (determinista, por palabras
+clave) y lo declara en `assumptions` — las ocho preguntas se siguen
+respondiendo sin credencial, demostrado en
+`tests/test_orchestration_orchestrator.py`. `orchestration.plans` resuelve
+el intent a un workflow (registro determinista, `Intent -> IntentSpec`) y
+completa los parámetros que el modelo nunca puede conocer (años/fechas del
+dataset) antes de ejecutarlo. `evidence/render.py::render_bundle_text`
+sigue siendo el único renderer — el Answer Renderer (opcional, prosa desde
+un `EvidenceBundle` ya decidido) queda fuera del alcance de esta fase y
+sigue pendiente.
 
 ## Qué es determinista
 

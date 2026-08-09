@@ -16,11 +16,11 @@ from finance_assistant.evidence.models import (
     AnswerStatus,
     Coverage,
     EvidenceBundle,
-    Intent,
     MissingEvidence,
     MissingEvidenceReasonCode,
     SourceRef,
 )
+from finance_assistant.orchestration.intents import Intent
 from finance_assistant.tools.documents import search_documents
 from finance_assistant.workflows._shared import ToolTrace
 

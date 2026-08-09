@@ -13,7 +13,8 @@ import pandas as pd
 
 from finance_assistant.config import DEFAULT_FINANCIAL_DATE_FIELD
 from finance_assistant.evidence.gate import apply_gate
-from finance_assistant.evidence.models import AnswerStatus, Coverage, EvidenceBundle, Intent, SourceRef
+from finance_assistant.evidence.models import AnswerStatus, Coverage, EvidenceBundle, SourceRef
+from finance_assistant.orchestration.intents import Intent
 from finance_assistant.tools.documents import search_documents
 from finance_assistant.tools.ledger import query_ledger
 from finance_assistant.tools.te_policy import evaluate_te_policy, load_policy_rules
